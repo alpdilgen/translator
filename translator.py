@@ -660,7 +660,7 @@ def main():
     # Create layout with tabs
     tab1, tab2, tab3 = st.tabs(["File Uploads & Settings", "Processing", "Results"])
     
-    with tab1:
+            with tab1:
         col1, col2 = st.columns(2)
         
         with col1:
@@ -714,14 +714,16 @@ def main():
             start_button = st.button("Start Processing", disabled=st.session_state.processing_started)
             
         # Add overall progress indicator in main tab
-        if st.session_state.processing_started and not st.session_state.processing_complete:
-            st.subheader("Progress")
-            progress_bar = st.progress(st.session_state.progress)
-            status = st.empty()
-            if st.session_state.total_batches > 0:
-                status.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
-            else:
-                status.text("Preparing to process...")
+        overall_progress_section = st.container()
+        with overall_progress_section:
+            if st.session_state.processing_started:
+                st.subheader("Progress")
+                overall_progress_bar = st.progress(st.session_state.progress)
+                overall_status = st.empty()
+                if st.session_state.total_batches > 0:
+                    overall_status.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+                else:
+                    overall_status.text("Preparing to process...")
     
     with tab2:
         st.subheader("Processing Status")
@@ -1082,7 +1084,6 @@ def main():
             
             # Set up progress display
             progress_placeholder = st.empty()
-            status_placeholder = st.empty()
             
             # Process batches
             for batch_index, batch in enumerate(batches):
@@ -1091,11 +1092,8 @@ def main():
                 st.session_state.current_batch = batch_index + 1
                 st.session_state.progress = batch_progress
                 
-                # Update both progress displays
+                # Update progress display
                 progress_placeholder.progress(batch_progress)
-                main_progress.progress(batch_progress)
-                status_placeholder.markdown(f"**Processing:** Batch {batch_index + 1}/{len(batches)} ({int(batch_progress * 100)}%)")
-                main_status.text(f"Processing batch {batch_index + 1} of {len(batches)} ({int(batch_progress * 100)}%)")
                 
                 # Force UI to update
                 time.sleep(0.1)
@@ -1348,6 +1346,9 @@ def main():
             st.session_state.processing_complete = True
             st.session_state.progress = 1.0
             
+            # Update progress displays
+            progress_placeholder.progress(1.0)
+            
             # Show completion message
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
             st.session_state.logs.append({
@@ -1355,11 +1356,6 @@ def main():
                 'type': 'success',
                 'timestamp': timestamp
             })
-            
-            # Switch to results tab and mark completion
-            st.session_state.processing_complete = True
-            st.session_state.progress = 1.0
-            st.rerun()
             
         except Exception as e:
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
