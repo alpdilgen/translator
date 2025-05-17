@@ -1,3 +1,15 @@
+            # Start progress monitoring in main thread
+            progress_placeholder = st.empty()
+            status_placeholder = st.empty()
+            
+            # Update progress
+            def update_progress():
+                progress_placeholder.progress(st.session_state.progress)
+                if st.session_state.total_batches > 0:
+                    status_placeholder.markdown(f"**Processing:** Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+                else:
+                    status_placeholder.markdown("**Processing:** Initializing...")
+                time.sleep(0.5)  # Refresh rate for progress updates
 import streamlit as st
 import os
 import tempfile
@@ -8,6 +20,7 @@ from anthropic import Anthropic
 from openai import OpenAI
 import xml.dom.minidom as minidom
 import shutil
+import time  # Added for sleep functionality
 
 st.set_page_config(
     page_title="MemoQ Translation Assistant",
@@ -584,6 +597,7 @@ def main():
         st.session_state.translated_file_path = None
         st.session_state.xliff_content = None
         st.session_state.batch_results = []
+        st.session_state.tmp_dir = None
     
     # Create layout with tabs
     tab1, tab2, tab3 = st.tabs(["File Uploads & Settings", "Processing", "Results"])
@@ -640,6 +654,16 @@ def main():
             
             # Action button
             start_button = st.button("Start Processing", disabled=st.session_state.processing_started)
+            
+        # Add overall progress indicator in main tab
+        if st.session_state.processing_started and not st.session_state.processing_complete:
+            st.subheader("Progress")
+            progress_bar = st.progress(st.session_state.progress)
+            status = st.empty()
+            if st.session_state.total_batches > 0:
+                status.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+            else:
+                status.text("Preparing to process...")
     
     with tab2:
         st.subheader("Processing Status")
@@ -650,9 +674,15 @@ def main():
             batch_status = st.empty()
             
             if st.session_state.total_batches > 0:
-                batch_status.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
+                status_text.markdown(f"**Status:** Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
+                batch_status.markdown(f"**Progress:** {int(st.session_state.progress * 100)}% complete")
             else:
-                batch_status.text("Preparing batches...")
+                status_text.markdown("**Status:** Preparing batches...")
+                batch_status.markdown("**Progress:** Initializing...")
+            
+            # Add spinner to show activity
+            with st.spinner('Processing... Please wait'):
+                st.info("The application is actively processing your file. This may take several minutes depending on file size and batch settings.")
         
         # Display log messages
         st.subheader("Process Log")
@@ -666,7 +696,7 @@ def main():
                 elif log['type'] == 'warning':
                     st.warning(log['message'])
                 elif log['type'] == 'success':
-                    st.success(log['message'])
+                    st.success(log['message']}
         
         # Debug section only visible when debug mode is on
         if debug_mode:
@@ -893,7 +923,7 @@ def main():
             })
             
             # Create translated file path
-            output_path = os.path.join(tmp_dir, f"{os.path.splitext(xliff_file.name)[0]}_translated{os.path.splitext(xliff_file.name)[1]}")
+            output_path = os.path.join(st.session_state.tmp_dir, f"{os.path.splitext(xliff_file.name)[0]}_translated{os.path.splitext(xliff_file.name)[1]}")
             
             # Start asynchronous processing
             st.session_state.current_xliff_content = xliff_content
@@ -1022,8 +1052,9 @@ def main():
                 # Add batch result
                 st.session_state.batch_results.append(batch_result)
                 
-                # Rerun to update UI
-                st.rerun()
+                # Increment progress without rerunning
+                st.session_state.progress = (batch_index + 1) / len(batches)
+                st.session_state.current_batch = batch_index + 1
             
             # Update XLIFF with all translations
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
