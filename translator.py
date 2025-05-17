@@ -1,15 +1,5 @@
             # Start progress monitoring in main thread
-            progress_placeholder = st.empty()
-            status_placeholder = st.empty()
-            
-            # Update progress
-            def update_progress():
-                progress_placeholder.progress(st.session_state.progress)
-                if st.session_state.total_batches > 0:
-                    status_placeholder.markdown(f"**Processing:** Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
-                else:
-                    status_placeholder.markdown("**Processing:** Initializing...")
-                time.sleep(0.5)  # Refresh rate for progress updates
+            # Remove this section as it's now integrated into the batch processing loop
 import streamlit as st
 import os
 import tempfile
@@ -1058,9 +1048,19 @@ def main():
                 # Add batch result
                 st.session_state.batch_results.append(batch_result)
                 
-                # Increment progress without rerunning
-                st.session_state.progress = (batch_index + 1) / len(batches)
+                # Update progress at the end of batch processing
                 st.session_state.current_batch = batch_index + 1
+                st.session_state.progress = (batch_index + 1) / len(batches)
+                
+                # Update progress display
+                progress_placeholder.progress(st.session_state.progress)
+                status_placeholder.markdown(f"**Processing:** Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+                
+                # Add batch result
+                st.session_state.batch_results.append(batch_result)
+                
+                # Add a small sleep to let UI refresh
+                time.sleep(0.1)
             
             # Update XLIFF with all translations
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
