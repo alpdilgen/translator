@@ -931,15 +931,21 @@ def main():
             # Process each batch
             all_translations = {}
             
+            # Start progress monitoring
+            progress_placeholder = st.empty()
+            status_placeholder = st.empty()
+            
+            # Process batch by batch
             for batch_index, batch in enumerate(batches):
                 st.session_state.current_batch = batch_index + 1
                 st.session_state.progress = batch_index / len(batches)
                 
-                # Rerun to update UI
-                st.rerun()
-            
-            # Continue processing after UI update
-            for batch_index, batch in enumerate(batches):
+                # Update progress display
+                progress_placeholder.progress(st.session_state.progress)
+                if st.session_state.total_batches > 0:
+                    status_placeholder.markdown(f"**Processing:** Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+                
+                # Process the current batch
                 batch_result = {'batch_index': batch_index}
                 
                 try:
