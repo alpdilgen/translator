@@ -20,9 +20,6 @@ st.set_page_config(
 def extract_translatable_segments(xliff_content):
     """Extract translatable segments from XLIFF file with debug details"""
     try:
-        # Add debug printout
-        st.write("Analyzing XLIFF file structure...")
-        
         # Try first with ET
         try:
             # Register MemoQ namespace
@@ -32,13 +29,6 @@ def extract_translatable_segments(xliff_content):
             # Parse XML
             root = ET.fromstring(xliff_content)
             
-            # Debug structure
-            st.write(f"Root tag: {root.tag}")
-            children = list(root)
-            st.write(f"Found {len(children)} direct children under root")
-            if len(children) > 0:
-                st.write(f"First child tag: {children[0].tag}")
-            
             # Get namespace
             ns = {'x': 'urn:oasis:names:tc:xliff:document:1.2', 'mq': 'MQXliff'}
             
@@ -47,13 +37,10 @@ def extract_translatable_segments(xliff_content):
             if not file_nodes:
                 file_nodes = root.findall('.//x:file', ns)
             
-            st.write(f"Found {len(file_nodes)} file nodes")
-            
             if not file_nodes:
                 # Try without namespaces
                 all_elements = list(root.iter())
                 file_count = sum(1 for elem in all_elements if elem.tag.endswith('file'))
-                st.write(f"Found {file_count} elements with tag ending in 'file'")
                 
                 # Try direct attribute checking for all elements
                 all_file_like = []
@@ -62,8 +49,6 @@ def extract_translatable_segments(xliff_content):
                         'target-language' in elem.attrib or 
                         'original' in elem.attrib):
                         all_file_like.append(elem)
-                
-                st.write(f"Found {len(all_file_like)} elements with file-like attributes")
                 
                 if len(all_file_like) > 0:
                     file_nodes = all_file_like
@@ -86,9 +71,6 @@ def extract_translatable_segments(xliff_content):
             if document_name is None:
                 document_name = file_node.attrib.get('original')
             
-            st.write(f"Source lang: {source_lang}, Target lang: {target_lang}")
-            st.write(f"Document name: {document_name}")
-            
             # Find all trans-unit nodes with different approaches
             trans_units = []
             
@@ -103,18 +85,8 @@ def extract_translatable_segments(xliff_content):
                 all_elements = list(root.iter())
                 trans_units = [elem for elem in all_elements if elem.tag.endswith('trans-unit')]
             
-            st.write(f"Found {len(trans_units)} translation units")
-            
             # Extract segments
             segments = []
-            
-            # Show sample of first trans-unit if available
-            if len(trans_units) > 0:
-                sample_unit = trans_units[0]
-                st.write("Sample trans-unit structure:")
-                st.write(f"  - Attributes: {sample_unit.attrib}")
-                children = list(sample_unit)
-                st.write(f"  - Children: {[child.tag for child in children]}")
             
             for trans_unit in trans_units:
                 try:
@@ -189,29 +161,18 @@ def extract_translatable_segments(xliff_content):
                         })
                 
                 except Exception as segment_error:
-                    st.warning(f"Error processing a segment: {str(segment_error)}")
                     continue
-            
-            st.write(f"Extracted {len(segments)} segments")
-            
-            if len(segments) > 0:
-                st.write("Sample first segment:")
-                st.write(segments[0])
             
             return source_lang, target_lang, document_name, segments
         
         except Exception as et_error:
-            st.error(f"ElementTree approach failed: {str(et_error)}")
-            
             # Try with minidom as fallback
             try:
-                st.write("Trying with minidom...")
                 dom = minidom.parseString(xliff_content)
                 root = dom.documentElement
                 
                 # Get file node
                 file_nodes = dom.getElementsByTagName('file')
-                st.write(f"Found {len(file_nodes)} file nodes with minidom")
                 
                 if not file_nodes:
                     return None, None, None, []
@@ -221,11 +182,8 @@ def extract_translatable_segments(xliff_content):
                 target_lang = file_node.getAttribute('target-language')
                 document_name = file_node.getAttribute('original')
                 
-                st.write(f"Source lang: {source_lang}, Target lang: {target_lang}")
-                
                 # Get all trans-units
                 trans_units = dom.getElementsByTagName('trans-unit')
-                st.write(f"Found {len(trans_units)} translation units with minidom")
                 
                 segments = []
                 for trans_unit in trans_units:
@@ -266,25 +224,15 @@ def extract_translatable_segments(xliff_content):
                             })
                     
                     except Exception as segment_error:
-                        st.warning(f"Error processing a segment with minidom: {str(segment_error)}")
                         continue
-                
-                st.write(f"Extracted {len(segments)} segments with minidom")
-                
-                if len(segments) > 0:
-                    st.write("Sample first segment (minidom):")
-                    st.write(segments[0])
                 
                 return source_lang, target_lang, document_name, segments
             
             except Exception as dom_error:
-                st.error(f"minidom approach also failed: {str(dom_error)}")
                 return None, None, None, []
     
     except Exception as e:
-        st.error(f"Error parsing XLIFF file: {str(e)}")
         import traceback
-        st.error(f"Traceback: {traceback.format_exc()}")
         return None, None, None, []
 
 def extract_tm_matches(tmx_content, source_lang, target_lang, source_segments, match_threshold):
@@ -345,7 +293,6 @@ def extract_tm_matches(tmx_content, source_lang, target_lang, source_segments, m
         
         return unique_matches
     except Exception as e:
-        st.error(f"Error processing TMX file: {str(e)}")
         return []
 
 def calculate_similarity(text1, text2):
@@ -371,7 +318,6 @@ def extract_terminology(csv_content, source_segments):
         df = pd.read_csv(pd.StringIO(csv_content))
         
         if len(df.columns) < 2:
-            st.warning("CSV file must have at least 2 columns (source term and target term)")
             return []
         
         # Extract source and target terms
@@ -398,7 +344,6 @@ def extract_terminology(csv_content, source_segments):
         
         return term_matches
     except Exception as e:
-        st.error(f"Error processing terminology CSV: {str(e)}")
         return []
 
 def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, batch, tm_matches, term_matches):
@@ -520,7 +465,6 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             )
             return response.choices[0].message.content
     except Exception as e:
-        st.error(f"Error communicating with AI API: {str(e)}")
         return None
 
 def parse_ai_response(ai_response, batch):
@@ -563,9 +507,6 @@ def parse_ai_response(ai_response, batch):
                                 found = True
                                 break
                         break
-        
-        if not found:
-            st.warning(f"Could not find translation for segment {segment_number} (ID: {segment['id']})")
     
     return translations
 
@@ -627,7 +568,6 @@ def update_xliff_with_translations(xliff_content, translations):
         
         return pretty_xml, updated_count
     except Exception as e:
-        st.error(f"Error updating XLIFF: {str(e)}")
         return None, 0
 
 # Main application
@@ -635,16 +575,10 @@ def main():
     st.title("MemoQ Translation Assistant")
     st.markdown("Process MemoQ XLIFF files with Translation Memory, Terminology, and AI assistance")
     
-    # Create main progress indicators
-    main_progress_container = st.container()
-    with main_progress_container:
-        main_progress = st.progress(0)
-        main_status = st.empty()
-    
-    # Add debugging toggle
+    # Debug toggle
     debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
     
-    # Initialize session state for tracking
+    # Initialize session state
     if 'processing_started' not in st.session_state:
         st.session_state.processing_started = False
         st.session_state.processing_complete = False
@@ -657,10 +591,11 @@ def main():
         st.session_state.batch_results = []
         st.session_state.tmp_dir = None
     
-    # Create layout with tabs
+    # Create tab layout
     tab1, tab2, tab3 = st.tabs(["File Uploads & Settings", "Processing", "Results"])
     
-            with tab1:
+    # Tab 1: File Uploads & Settings
+    with tab1:
         col1, col2 = st.columns(2)
         
         with col1:
@@ -712,39 +647,34 @@ def main():
             
             # Action button
             start_button = st.button("Start Processing", disabled=st.session_state.processing_started)
-            
-        # Add overall progress indicator in main tab
-        overall_progress_section = st.container()
-        with overall_progress_section:
-            if st.session_state.processing_started:
-                st.subheader("Progress")
-                overall_progress_bar = st.progress(st.session_state.progress)
-                overall_status = st.empty()
-                if st.session_state.total_batches > 0:
-                    overall_status.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
-                else:
-                    overall_status.text("Preparing to process...")
+        
+        # Progress bar in main tab
+        if st.session_state.processing_started:
+            st.subheader("Progress")
+            progress_bar = st.progress(st.session_state.progress)
+            status = st.empty()
+            if st.session_state.total_batches > 0:
+                status.text(f"Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+            else:
+                status.text("Preparing...")
     
+    # Tab 2: Processing
     with tab2:
         st.subheader("Processing Status")
         
-        if st.session_state.processing_started and not st.session_state.processing_complete:
+        if st.session_state.processing_started:
             progress_bar = st.progress(st.session_state.progress)
-            status_text = st.empty()
-            batch_status = st.empty()
-            
+            status = st.empty()
             if st.session_state.total_batches > 0:
-                status_text.markdown(f"**Status:** Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
-                batch_status.markdown(f"**Progress:** {int(st.session_state.progress * 100)}% complete")
+                status.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
             else:
-                status_text.markdown("**Status:** Preparing batches...")
-                batch_status.markdown("**Progress:** Initializing...")
+                status.text("Preparing batches...")
             
-            # Add spinner to show activity
-            with st.spinner('Processing... Please wait'):
-                st.info("The application is actively processing your file. This may take several minutes depending on file size and batch settings.")
+            if not st.session_state.processing_complete:
+                with st.spinner('Processing... Please wait'):
+                    st.info("Processing your file. This may take several minutes.")
         
-        # Display log messages
+        # Process log
         st.subheader("Process Log")
         log_container = st.container(height=300)
         with log_container:
@@ -758,17 +688,14 @@ def main():
                 elif log['type'] == 'success':
                     st.success(log['message'])
         
-        # Debug section only visible when debug mode is on
+        # Debug info
         if debug_mode:
             st.subheader("Debug Information")
             if st.session_state.xliff_content:
-                with st.expander("XLIFF File Peek (first 500 chars)"):
+                with st.expander("XLIFF Preview"):
                     st.code(st.session_state.xliff_content[:500])
-            
-            if 'error_traceback' in st.session_state:
-                with st.expander("Error Traceback"):
-                    st.code(st.session_state.error_traceback)
     
+    # Tab 3: Results
     with tab3:
         st.subheader("Translation Results")
         
@@ -778,18 +705,18 @@ def main():
             if st.session_state.translated_file_path:
                 with open(st.session_state.translated_file_path, 'rb') as f:
                     st.download_button(
-                        label="Download Translated XLIFF",
+                        label="Download Translated File",
                         data=f,
                         file_name=os.path.basename(st.session_state.translated_file_path),
                         mime="application/xliff+xml"
                     )
             
-            # Display batch results
+            # Batch results
             if st.session_state.batch_results:
-                st.subheader("Batch Processing Summary")
+                st.subheader("Batch Summary")
                 
                 for i, result in enumerate(st.session_state.batch_results):
-                    with st.expander(f"Batch {i+1}: {result.get('segments_processed', 0)} segments"):
+                    with st.expander(f"Batch {i+1}"):
                         col1, col2 = st.columns(2)
                         with col1:
                             st.metric("Processed", result.get('segments_processed', 0))
@@ -799,10 +726,9 @@ def main():
                         if 'error' in result:
                             st.error(f"Error: {result['error']}")
         
-        # Reset button to start over
+        # Reset button
         if st.session_state.processing_started:
             if st.button("Start New Translation"):
-                # Reset session state
                 st.session_state.processing_started = False
                 st.session_state.processing_complete = False
                 st.session_state.progress = 0
@@ -812,10 +738,9 @@ def main():
                 st.session_state.translated_file_path = None
                 st.session_state.xliff_content = None
                 st.session_state.batch_results = []
-                # Rerun to refresh UI
                 st.rerun()
     
-    # Main processing logic
+    # Processing logic
     if start_button and not st.session_state.processing_started:
         # Validate inputs
         if not xliff_file:
@@ -833,8 +758,10 @@ def main():
         
         # Set processing state
         st.session_state.processing_started = True
+        st.session_state.processing_complete = False
         st.session_state.logs = []
         st.session_state.batch_results = []
+        st.session_state.progress = 0
         
         try:
             # Read files with better encoding handling
@@ -856,7 +783,6 @@ def main():
                         else:
                             # Try Latin-1 (should always work but might give wrong characters)
                             xliff_content = xliff_bytes.decode('latin-1')
-                            st.warning("Could not determine the correct encoding for the XLIFF file. Using Latin-1 encoding as fallback, which may result in incorrect characters.")
                 
                 timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                 st.session_state.logs.append({
@@ -877,7 +803,6 @@ def main():
                             tmx_content = tmx_bytes.decode('utf-16')
                         else:
                             tmx_content = tmx_bytes.decode('latin-1')
-                            st.warning("Could not determine the correct encoding for the TMX file. Using Latin-1 encoding as fallback.")
                 
                 # Read CSV file with similar handling
                 csv_bytes = csv_file.read()
@@ -891,7 +816,6 @@ def main():
                             csv_content = csv_bytes.decode('utf-16')
                         else:
                             csv_content = csv_bytes.decode('latin-1')
-                            st.warning("Could not determine the correct encoding for the CSV file. Using Latin-1 encoding as fallback.")
                 
                 # Get prompt template
                 prompt_template = ""
@@ -906,7 +830,7 @@ def main():
                             except UnicodeDecodeError:
                                 prompt_template = prompt_bytes.decode('latin-1')
                     except Exception as prompt_error:
-                        st.warning(f"Error reading prompt file: {str(prompt_error)}")
+                        pass
                 
                 if custom_prompt_text:
                     prompt_template += "\n\n" + custom_prompt_text if prompt_template else custom_prompt_text
@@ -918,9 +842,6 @@ def main():
                     'type': 'error',
                     'timestamp': timestamp
                 })
-                import traceback
-                st.session_state.error_traceback = traceback.format_exc()
-                st.error(f"Failed to read input files: {str(file_error)}")
                 st.session_state.processing_complete = True
                 return
             
@@ -935,29 +856,10 @@ def main():
                 'timestamp': timestamp
             })
             
-            # Create temporary directory if not already created
-            if st.session_state.tmp_dir is None:
-                try:
-                    st.session_state.tmp_dir = tempfile.mkdtemp()
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': f"Created temporary directory: {st.session_state.tmp_dir}",
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
-                except Exception as temp_dir_error:
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': f"Error creating temporary directory: {str(temp_dir_error)}",
-                        'type': 'error',
-                        'timestamp': timestamp
-                    })
-                    st.error(f"Failed to create temporary directory: {str(temp_dir_error)}")
-                    st.session_state.processing_complete = True
-                    return
-            
-            # Create backup with binary mode
+            # Create backup of XLIFF file
             try:
+                if st.session_state.tmp_dir is None:
+                    st.session_state.tmp_dir = tempfile.mkdtemp()
                 backup_path = os.path.join(st.session_state.tmp_dir, f"{xliff_file.name}.backup")
                 with open(backup_path, 'wb') as f:
                     xliff_file.seek(0)
@@ -966,7 +868,7 @@ def main():
                 
                 timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                 st.session_state.logs.append({
-                    'message': f"Created backup of XLIFF file at {backup_path}",
+                    'message': f"Created backup of XLIFF file",
                     'type': 'info',
                     'timestamp': timestamp
                 })
@@ -977,17 +879,8 @@ def main():
                     'type': 'error',
                     'timestamp': timestamp
                 })
-                st.error(f"Failed to create backup: {str(backup_error)}")
-                st.session_state.processing_complete = True
-                return
-            
-            # Add a check for debug mode to show/hide debug info
-            show_debug = debug_mode
             
             # Extract segments from XLIFF
-            if show_debug:
-                st.write("Extracting segments from XLIFF file...")
-                
             source_lang, target_lang, document_name, segments = extract_translatable_segments(xliff_content)
             
             if not segments:
@@ -997,71 +890,8 @@ def main():
                     'type': 'error',
                     'timestamp': timestamp
                 })
-                
-                # Show the first part of the XLIFF content to help debug
-                if show_debug:
-                    st.error("Failed to extract segments. Here's a preview of the XLIFF content:")
-                    st.code(xliff_content[:500])
-                    
-                    # Try to extract file info directly 
-                    try:
-                        dom = minidom.parseString(xliff_content)
-                        st.write("XLIFF Structure Analysis:")
-                        root_element = dom.documentElement
-                        st.write(f"Root element: {root_element.tagName}")
-                        
-                        # List all elements by tag name
-                        element_counts = {}
-                        for child in root_element.childNodes:
-                            if child.nodeType == child.ELEMENT_NODE:
-                                tag_name = child.tagName
-                                if tag_name in element_counts:
-                                    element_counts[tag_name] += 1
-                                else:
-                                    element_counts[tag_name] = 1
-                        
-                        st.write("First-level elements:")
-                        st.write(element_counts)
-                        
-                        # List all trans-unit elements
-                        trans_units = dom.getElementsByTagName("trans-unit")
-                        st.write(f"Found {len(trans_units)} trans-unit elements directly")
-                        
-                        # Count all elements
-                        all_elements = dom.getElementsByTagName("*")
-                        st.write(f"Total elements in document: {len(all_elements)}")
-                        
-                        # Try forcing segment extraction
-                        forced_segments = []
-                        for tu in trans_units:
-                            try:
-                                segment_id = tu.getAttribute('id') or str(uuid.uuid4())
-                                sources = tu.getElementsByTagName('source')
-                                if sources:
-                                    source_text = sources[0].firstChild.nodeValue if sources[0].firstChild else ""
-                                    forced_segments.append({
-                                        'id': segment_id,
-                                        'source': source_text,
-                                        'status': 'Forced'
-                                    })
-                            except Exception as e:
-                                st.write(f"Error extracting segment: {e}")
-                        
-                        if forced_segments:
-                            st.write(f"Forced extraction found {len(forced_segments)} segments")
-                            st.write("Continuing with these segments")
-                            segments = forced_segments
-                        else:
-                            st.session_state.processing_complete = True
-                            return
-                            
-                    except Exception as analysis_error:
-                        st.error(f"Analysis error: {str(analysis_error)}")
-                        st.session_state.processing_complete = True
-                        return
-                else:
-                    st.session_state.processing_complete = True
-                    return
+                st.session_state.processing_complete = True
+                return
             
             # Prepare batches
             batches = []
@@ -1079,15 +909,15 @@ def main():
             # Create translated file path
             output_path = os.path.join(st.session_state.tmp_dir, f"{os.path.splitext(xliff_file.name)[0]}_translated{os.path.splitext(xliff_file.name)[1]}")
             
-            # Process each batch
+            # Process batches
             all_translations = {}
             
-            # Set up progress display
+            # Setup progress display
             progress_placeholder = st.empty()
             
-            # Process batches
+            # Process each batch
             for batch_index, batch in enumerate(batches):
-                # Update progress immediately at start of batch
+                # Update progress
                 batch_progress = (batch_index) / len(batches)
                 st.session_state.current_batch = batch_index + 1
                 st.session_state.progress = batch_progress
@@ -1095,10 +925,7 @@ def main():
                 # Update progress display
                 progress_placeholder.progress(batch_progress)
                 
-                # Force UI to update
-                time.sleep(0.1)
-                
-                # Process the current batch
+                # Process current batch
                 batch_result = {'batch_index': batch_index}
                 
                 try:
@@ -1109,7 +936,7 @@ def main():
                         'timestamp': timestamp
                     })
                     
-                    # Find TM matches for this batch
+                    # Find TM matches
                     timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                     st.session_state.logs.append({
                         'message': f"Finding TM matches with threshold {match_threshold}%",
@@ -1195,18 +1022,18 @@ def main():
                     batch_result['segments_processed'] = len(batch)
                     batch_result['translations_received'] = len(translations)
                     
-                    # Update progress at the end of batch processing
+                    # Update progress at end of batch
+                    batch_progress = (batch_index + 1) / len(batches)
                     st.session_state.current_batch = batch_index + 1
-                    st.session_state.progress = (batch_index + 1) / len(batches)
+                    st.session_state.progress = batch_progress
                     
                     # Update progress display
-                    progress_placeholder.progress(st.session_state.progress)
-                    status_placeholder.markdown(f"**Processing:** Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+                    progress_placeholder.progress(batch_progress)
                     
                     # Add batch result
                     st.session_state.batch_results.append(batch_result)
                     
-                    # Add a small sleep to let UI refresh
+                    # Small delay for UI refresh
                     time.sleep(0.1)
                     
                 except Exception as e:
@@ -1219,7 +1046,7 @@ def main():
                     batch_result['error'] = str(e)
                     st.session_state.batch_results.append(batch_result)
             
-            # Update XLIFF with all translations
+            # Update XLIFF with translations
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
             st.session_state.logs.append({
                 'message': f"Updating XLIFF file with {len(all_translations)} translations",
@@ -1231,13 +1058,31 @@ def main():
                 updated_xliff, updated_count = update_xliff_with_translations(st.session_state.xliff_content, all_translations)
                 
                 if not updated_xliff:
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': "Failed to update XLIFF file - null result returned",
-                        'type': 'error',
-                        'timestamp': timestamp
-                    })
-                    raise Exception("Failed to update XLIFF file - null result returned")
+                    raise Exception("Failed to update XLIFF file")
+                
+                # Save final file
+                with open(output_path, 'wb') as f:
+                    if isinstance(updated_xliff, str):
+                        f.write(updated_xliff.encode('utf-8'))
+                    else:
+                        f.write(updated_xliff)
+                
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Updated {updated_count} segments in the XLIFF file",
+                    'type': 'success',
+                    'timestamp': timestamp
+                })
+                
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Saved translated XLIFF to {os.path.basename(output_path)}",
+                    'type': 'success',
+                    'timestamp': timestamp
+                })
+                
+                # Store translated file path for download
+                st.session_state.translated_file_path = output_path
             except Exception as update_error:
                 timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                 st.session_state.logs.append({
@@ -1245,14 +1090,12 @@ def main():
                     'type': 'error',
                     'timestamp': timestamp
                 })
-                main_progress.progress(1.0)  # Show complete even though error
-                main_status.text("Error updating XLIFF file")
                 
-                # Try to save the original with translations as a simple text file
+                # Save as text file instead
                 try:
                     text_output = "# Translation Results\n\n"
                     for seg_id, translation in all_translations.items():
-                        # Find the original segment for this ID
+                        # Find original segment
                         original = ""
                         for segment in segments:
                             if segment['id'] == seg_id:
@@ -1281,73 +1124,10 @@ def main():
                         'type': 'error',
                         'timestamp': timestamp
                     })
-                
-                st.session_state.processing_complete = True
-                return
-            
-            # Save final file in binary mode
-            try:
-                with open(output_path, 'wb') as f:
-                    if isinstance(updated_xliff, str):
-                        f.write(updated_xliff.encode('utf-8'))
-                    else:
-                        f.write(updated_xliff)
-                
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                st.session_state.logs.append({
-                    'message': f"Updated {updated_count} segments in the XLIFF file",
-                    'type': 'success',
-                    'timestamp': timestamp
-                })
-                
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                st.session_state.logs.append({
-                    'message': f"Saved translated XLIFF to {os.path.basename(output_path)}",
-                    'type': 'success',
-                    'timestamp': timestamp
-                })
-                
-                # Store translated file path for download
-                st.session_state.translated_file_path = output_path
-            except Exception as save_error:
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                st.session_state.logs.append({
-                    'message': f"Error saving translated file: {str(save_error)}",
-                    'type': 'error',
-                    'timestamp': timestamp
-                })
-                st.error(f"Failed to save translated file: {str(save_error)}")
-                
-                # Try to save to a different location as fallback
-                try:
-                    fallback_path = os.path.join(tempfile.gettempdir(), f"translated_{uuid.uuid4()}.mqxliff")
-                    with open(fallback_path, 'wb') as f:
-                        if isinstance(updated_xliff, str):
-                            f.write(updated_xliff.encode('utf-8'))
-                        else:
-                            f.write(updated_xliff)
-                    
-                    st.session_state.translated_file_path = fallback_path
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': f"Saved to fallback location: {fallback_path}",
-                        'type': 'warning',
-                        'timestamp': timestamp
-                    })
-                except Exception as fallback_error:
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': f"Fallback save also failed: {str(fallback_error)}",
-                        'type': 'error',
-                        'timestamp': timestamp
-                    })
             
             # Mark processing as complete
             st.session_state.processing_complete = True
             st.session_state.progress = 1.0
-            
-            # Update progress displays
-            progress_placeholder.progress(1.0)
             
             # Show completion message
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
@@ -1357,6 +1137,9 @@ def main():
                 'timestamp': timestamp
             })
             
+            # Refresh UI
+            st.rerun()
+            
         except Exception as e:
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
             st.session_state.logs.append({
@@ -1365,10 +1148,6 @@ def main():
                 'timestamp': timestamp
             })
             st.session_state.processing_complete = True
-            
-            # Add traceback for debugging
-            import traceback
-            st.session_state.error_traceback = traceback.format_exc()
 
 if __name__ == "__main__":
     main()
