@@ -802,6 +802,37 @@ def main():
                         else:
                             csv_content = csv_bytes.decode('latin-1')
                             st.warning("Could not determine the correct encoding for the CSV file. Using Latin-1 encoding as fallback.")
+                
+                # Get prompt template
+                prompt_template = ""
+                if prompt_file:
+                    try:
+                        prompt_bytes = prompt_file.read()
+                        try:
+                            prompt_template = prompt_bytes.decode('utf-8')
+                        except UnicodeDecodeError:
+                            try:
+                                prompt_template = prompt_bytes.decode('utf-16')
+                            except UnicodeDecodeError:
+                                prompt_template = prompt_bytes.decode('latin-1')
+                    except Exception as prompt_error:
+                        st.warning(f"Error reading prompt file: {str(prompt_error)}")
+                
+                if custom_prompt_text:
+                    prompt_template += "\n\n" + custom_prompt_text if prompt_template else custom_prompt_text
+            
+            except Exception as file_error:
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Error reading input files: {str(file_error)}",
+                    'type': 'error',
+                    'timestamp': timestamp
+                })
+                import traceback
+                st.session_state.error_traceback = traceback.format_exc()
+                st.error(f"Failed to read input files: {str(file_error)}")
+                st.session_state.processing_complete = True
+                return
             
             # Get prompt template
             prompt_template = ""
