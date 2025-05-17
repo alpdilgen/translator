@@ -429,43 +429,62 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
     try:
         if api_provider == 'anthropic':
             client = Anthropic(api_key=api_key)
-            response = client.messages.create(
-                model=model,
-                max_tokens=4000,
-                system=(
-                    "You are a professional translator specializing in technical documents. "
-                    "Translate precisely while preserving all formatting, tags, and special characters. "
-                    f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
-                    "Pay special attention to cultural nuances and linguistic patterns."
-                ),
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3
-            )
-            return response.content[0].text
+            try:
+                response = client.messages.create(
+                    model=model,
+                    max_tokens=4000,
+                    system=(
+                        "You are a professional translator specializing in technical documents. "
+                        "Translate precisely while preserving all formatting, tags, and special characters. "
+                        f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
+                        "Pay special attention to cultural nuances and linguistic patterns."
+                    ),
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3
+                )
+                return response.content[0].text
+            except Exception as api_error:
+                # Get detailed error message
+                error_message = f"Anthropic API Error: {str(api_error)}"
+                if hasattr(api_error, 'status_code'):
+                    error_message += f" (Status: {api_error.status_code})"
+                
+                st.error(error_message)
+                raise Exception(error_message)
         else:  # OpenAI
             client = OpenAI(api_key=api_key)
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a professional translator specializing in technical documents. "
-                            "Translate precisely while preserving all formatting, tags, and special characters. "
-                            f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
-                            "Pay special attention to cultural nuances and linguistic patterns."
-                        )
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=4000,
-                temperature=0.3
-            )
-            return response.choices[0].message.content
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a professional translator specializing in technical documents. "
+                                "Translate precisely while preserving all formatting, tags, and special characters. "
+                                f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
+                                "Pay special attention to cultural nuances and linguistic patterns."
+                            )
+                        },
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=4000,
+                    temperature=0.3
+                )
+                return response.choices[0].message.content
+            except Exception as api_error:
+                # Get detailed error message
+                error_message = f"OpenAI API Error: {str(api_error)}"
+                if hasattr(api_error, 'status_code'):
+                    error_message += f" (Status: {api_error.status_code})"
+                
+                st.error(error_message)
+                raise Exception(error_message)
     except Exception as e:
-        return None
+        st.error(f"API Error: {str(e)}")
+        raise Exception(f"API Error: {str(e)}")
 
 def parse_ai_response(ai_response, batch):
     """Parse AI response to extract translations"""
