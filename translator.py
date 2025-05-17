@@ -425,90 +425,101 @@ def get_language_name(lang_code):
     return language_names.get(base_lang) or language_names.get(lang_code) or lang_code
 
 def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target_lang):
-    """Get translations from AI model"""
+    """Get translations from AI model using direct API calls instead of SDKs"""
+    import requests
+    import json
+    
     try:
         if api_provider == 'anthropic':
-            # Simple initialization without extra parameters
-            try:
-                client = Anthropic(api_key=api_key)
-                response = client.messages.create(
-                    model=model,
-                    max_tokens=4000,
-                    system=(
-                        "You are a professional translator specializing in technical documents. "
-                        "Translate precisely while preserving all formatting, tags, and special characters. "
-                        f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
-                        "Pay special attention to cultural nuances and linguistic patterns."
-                    ),
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3
-                )
-                return response.content[0].text
-            except TypeError as type_error:
-                # This handles the proxies error specifically
-                if "proxies" in str(type_error):
-                    st.error("Anthropic client initialization error with proxies. Trying alternative initialization.")
-                    # Try again with a different approach
-                    import os
-                    os.environ["ANTHROPIC_API_KEY"] = api_key
-                    import anthropic
-                    client = anthropic.Anthropic()
-                    response = client.messages.create(
-                        model=model,
-                        max_tokens=4000,
-                        system=(
+            # Direct API call to Anthropic
+            headers = {
+                "x-api-key": api_key,
+                "content-type": "application/json",
+                "anthropic-version": "2023-06-01"
+            }
+            
+            data = {
+                "model": model,
+                "max_tokens": 4000,
+                "temperature": 0.3,
+                "system": (
+                    "You are a professional translator specializing in technical documents. "
+                    "Translate precisely while preserving all formatting, tags, and special characters. "
+                    f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
+                    "Pay special attention to cultural nuances and linguistic patterns."
+                ),
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            }
+            
+            response = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=headers,
+                json=data,
+                timeout=120  # 2 minute timeout
+            )
+            
+            if response.status_code != 200:
+                error_message = f"Anthropic API Error: Status {response.status_code}, {response.text}"
+                st.error(error_message)
+                raise Exception(error_message)
+            
+            result = response.json()
+            return result["content"][0]["text"]
+        
+        else:  # OpenAI
+            # Direct API call to OpenAI
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
                             "You are a professional translator specializing in technical documents. "
                             "Translate precisely while preserving all formatting, tags, and special characters. "
                             f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
                             "Pay special attention to cultural nuances and linguistic patterns."
-                        ),
-                        messages=[
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.3
-                    )
-                    return response.content[0].text
-                else:
-                    raise
-            except Exception as api_error:
-                # Get detailed error message
-                error_message = f"Anthropic API Error: {str(api_error)}"
+                        )
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 4000,
+                "temperature": 0.3
+            }
+            
+            response = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=120  # 2 minute timeout
+            )
+            
+            if response.status_code != 200:
+                error_message = f"OpenAI API Error: Status {response.status_code}, {response.text}"
                 st.error(error_message)
                 raise Exception(error_message)
-        else:  # OpenAI
-            client = OpenAI(api_key=api_key)
-            try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a professional translator specializing in technical documents. "
-                                "Translate precisely while preserving all formatting, tags, and special characters. "
-                                f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
-                                "Pay special attention to cultural nuances and linguistic patterns."
-                            )
-                        },
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_tokens=4000,
-                    temperature=0.3
-                )
-                return response.choices[0].message.content
-            except Exception as api_error:
-                # Get detailed error message
-                error_message = f"OpenAI API Error: {str(api_error)}"
-                if hasattr(api_error, 'status_code'):
-                    error_message += f" (Status: {api_error.status_code})"
-                
-                st.error(error_message)
-                raise Exception(error_message)
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+    
+    except requests.exceptions.RequestException as e:
+        error_message = f"Network error: {str(e)}"
+        st.error(error_message)
+        raise Exception(error_message)
+    except json.JSONDecodeError as e:
+        error_message = f"JSON parsing error: {str(e)}"
+        st.error(error_message)
+        raise Exception(error_message)
     except Exception as e:
-        st.error(f"API Error: {str(e)}")
-        raise Exception(f"API Error: {str(e)}")
+        error_message = f"API Error: {str(e)}"
+        st.error(error_message)
+        raise Exception(error_message)
 
 def parse_ai_response(ai_response, batch):
     """Parse AI response to extract translations"""
