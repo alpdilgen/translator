@@ -19,13 +19,76 @@ st.set_page_config(
 def extract_translatable_segments(xliff_content):
     """Extract translatable segments from XLIFF file"""
     try:
-        # Register MemoQ namespace
-        ET.register_namespace('mq', 'MQXliff')
-        ET.register_namespace('', 'urn:oasis:names:tc:xliff:document:1.2')
-        
-        # Parse XML
-        tree = ET.ElementTree(ET.fromstring(xliff_content))
-        root = tree.getroot()
+        # First, try parsing with ElementTree
+        try:
+            # Register MemoQ namespace
+            ET.register_namespace('mq', 'MQXliff')
+            ET.register_namespace('', 'urn:oasis:names:tc:xliff:document:1.2')
+            
+            # Parse XML
+            tree = ET.ElementTree(ET.fromstring(xliff_content))
+            root = tree.getroot()
+        except Exception as e:
+            st.error(f"Failed to parse XLIFF with ElementTree: {str(e)}")
+            
+            # Fallback to minidom
+            try:
+                dom = minidom.parseString(xliff_content)
+                root = dom.documentElement
+                
+                # Manual extraction with minidom
+                file_nodes = root.getElementsByTagName('file')
+                if not file_nodes:
+                    return None, None, None, []
+                
+                file_node = file_nodes[0]
+                source_lang = file_node.getAttribute('source-language')
+                target_lang = file_node.getAttribute('target-language')
+                document_name = file_node.getAttribute('original')
+                
+                segments = []
+                trans_units = root.getElementsByTagName('trans-unit')
+                
+                for trans_unit in trans_units:
+                    segment_id = trans_unit.getAttribute('id')
+                    status = trans_unit.getAttribute('mq:status')
+                    
+                    source_elements = trans_unit.getElementsByTagName('source')
+                    target_elements = trans_unit.getElementsByTagName('target')
+                    
+                    if source_elements:
+                        source_element = source_elements[0]
+                        source_text = ""
+                        
+                        # Extract text content from source
+                        for node in source_element.childNodes:
+                            if node.nodeType == node.TEXT_NODE:
+                                source_text += node.data
+                        
+                        # Check if target is empty
+                        has_target = False
+                        if target_elements:
+                            target_element = target_elements[0]
+                            target_text = ""
+                            
+                            for node in target_element.childNodes:
+                                if node.nodeType == node.TEXT_NODE:
+                                    target_text += node.data
+                            
+                            has_target = target_text.strip() != ""
+                        
+                        if status == 'NotStarted' or not has_target:
+                            segments.append({
+                                'id': segment_id,
+                                'source': source_text,
+                                'status': status
+                            })
+                
+                return source_lang, target_lang, document_name, segments
+            
+            except Exception as dom_error:
+                st.error(f"Failed to parse XLIFF with minidom: {str(dom_error)}")
+                return None, None, None, []
         
         # Get namespace
         ns = {'x': 'urn:oasis:names:tc:xliff:document:1.2', 'mq': 'MQXliff'}
@@ -40,9 +103,17 @@ def extract_translatable_segments(xliff_content):
         target_lang = file_node.get('target-language', 'unknown')
         document_name = file_node.get('original', 'Unknown document')
         
+        # Log successful extraction of file info
+        st.write(f"Detected languages: {source_lang} → {target_lang}")
+        
         # Extract segments
         segments = []
-        for trans_unit in root.findall('.//x:trans-unit', ns):
+        trans_units = root.findall('.//x:trans-unit', ns)
+        
+        # Log count of units found
+        st.write(f"Found {len(trans_units)} translation units")
+        
+        for trans_unit in trans_units:
             segment_id = trans_unit.get('id')
             status = trans_unit.get('{MQXliff}status', '')
             
@@ -50,12 +121,33 @@ def extract_translatable_segments(xliff_content):
             target_element = trans_unit.find('.//x:target', ns)
             
             if source_element is not None:
-                source_text = source_element.text or ""
+                # Handle different ways source text might be stored
+                if source_element.text is not None:
+                    source_text = source_element.text
+                else:
+                    # If there's no direct text, try to concatenate all text from child nodes
+                    source_text = ''.join(source_element.itertext())
+                
+                # If still empty, try a different approach
+                if not source_text:
+                    try:
+                        # Convert element to string and extract text
+                        source_str = ET.tostring(source_element, encoding='unicode')
+                        # Basic tag stripping (simplified)
+                        source_text = source_str.replace('<source>', '').replace('</source>', '')
+                    except:
+                        source_text = "[Error extracting text]"
                 
                 # Check if this segment needs translation
-                has_target = (target_element is not None and 
-                             target_element.text and 
-                             target_element.text.strip())
+                has_target = False
+                if target_element is not None:
+                    if target_element.text:
+                        target_text = target_element.text.strip()
+                        has_target = target_text != ""
+                    else:
+                        # Try concatenating all text
+                        target_text = ''.join(target_element.itertext()).strip()
+                        has_target = target_text != ""
                 
                 if status == 'NotStarted' or not has_target:
                     segments.append({
@@ -67,6 +159,9 @@ def extract_translatable_segments(xliff_content):
         return source_lang, target_lang, document_name, segments
     except Exception as e:
         st.error(f"Error parsing XLIFF file: {str(e)}")
+        # Add traceback for better debugging
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         return None, None, None, []
 
 def extract_tm_matches(tmx_content, source_lang, target_lang, source_segments, match_threshold):
@@ -354,68 +449,129 @@ def parse_ai_response(ai_response, batch):
 def update_xliff_with_translations(xliff_content, translations):
     """Update XLIFF file with translations"""
     try:
-        # Register namespaces
-        ET.register_namespace('mq', 'MQXliff')
-        ET.register_namespace('', 'urn:oasis:names:tc:xliff:document:1.2')
-        
-        # Parse XML
-        tree = ET.ElementTree(ET.fromstring(xliff_content))
-        root = tree.getroot()
-        
-        # Get namespace
-        ns = {'x': 'urn:oasis:names:tc:xliff:document:1.2', 'mq': 'MQXliff'}
-        
-        # Update segments with translations
-        updated_count = 0
-        for trans_unit in root.findall('.//x:trans-unit', ns):
-            segment_id = trans_unit.get('id')
+        # First, try direct XML manipulation with ElementTree
+        try:
+            # Register namespaces
+            ET.register_namespace('mq', 'MQXliff')
+            ET.register_namespace('', 'urn:oasis:names:tc:xliff:document:1.2')
             
-            if segment_id in translations:
-                # Find or create target element
-                target = trans_unit.find('.//x:target', ns)
-                if target is None:
-                    # Create new target element
-                    source = trans_unit.find('.//x:source', ns)
-                    target = ET.SubElement(trans_unit, '{urn:oasis:names:tc:xliff:document:1.2}target')
-                    if source is not None and source.get('{http://www.w3.org/XML/1998/namespace}space'):
-                        target.set('{http://www.w3.org/XML/1998/namespace}space', 
-                                  source.get('{http://www.w3.org/XML/1998/namespace}space'))
+            # Parse XML
+            tree = ET.ElementTree(ET.fromstring(xliff_content))
+            root = tree.getroot()
+            
+            # Get namespace
+            ns = {'x': 'urn:oasis:names:tc:xliff:document:1.2', 'mq': 'MQXliff'}
+            
+            # Update segments with translations
+            updated_count = 0
+            for trans_unit in root.findall('.//x:trans-unit', ns):
+                segment_id = trans_unit.get('id')
                 
-                # Update target text
-                target.text = translations[segment_id]
+                if segment_id in translations:
+                    # Find or create target element
+                    target = trans_unit.find('.//x:target', ns)
+                    if target is None:
+                        # Create new target element
+                        source = trans_unit.find('.//x:source', ns)
+                        target = ET.SubElement(trans_unit, '{urn:oasis:names:tc:xliff:document:1.2}target')
+                        if source is not None and source.get('{http://www.w3.org/XML/1998/namespace}space'):
+                            target.set('{http://www.w3.org/XML/1998/namespace}space', 
+                                    source.get('{http://www.w3.org/XML/1998/namespace}space'))
+                    
+                    # Update target text
+                    target.text = translations[segment_id]
+                    
+                    # Update status if it exists
+                    if '{MQXliff}status' in trans_unit.attrib:
+                        trans_unit.set('{MQXliff}status', 'Translated')
+                    
+                    # Update timestamp if it exists
+                    if '{MQXliff}lastchangedtimestamp' in trans_unit.attrib:
+                        from datetime import datetime
+                        trans_unit.set('{MQXliff}lastchangedtimestamp', 
+                                    datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+                    
+                    updated_count += 1
+        
+            # Convert to string with proper formatting
+            xml_string = ET.tostring(root, encoding='utf-8', method='xml')
+            
+            # Use minidom for pretty printing
+            dom = minidom.parseString(xml_string)
+            pretty_xml = dom.toprettyxml(indent="  ")
+            
+            # Fix XML declaration
+            if not pretty_xml.startswith('<?xml version="1.0" encoding="UTF-8"?>'):
+                pretty_xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml.split('\n', 1)[1]
+            
+            return pretty_xml, updated_count
+            
+        except Exception as et_error:
+            st.error(f"ElementTree update failed, trying alternative method: {str(et_error)}")
+            
+            # Fallback to minidom
+            try:
+                dom = minidom.parseString(xliff_content)
                 
-                # Update status if it exists
-                if '{MQXliff}status' in trans_unit.attrib:
-                    trans_unit.set('{MQXliff}status', 'Translated')
+                # Update segments with translations
+                updated_count = 0
+                trans_units = dom.getElementsByTagName('trans-unit')
                 
-                # Update timestamp if it exists
-                if '{MQXliff}lastchangedtimestamp' in trans_unit.attrib:
-                    from datetime import datetime
-                    trans_unit.set('{MQXliff}lastchangedtimestamp', 
-                                  datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+                for trans_unit in trans_units:
+                    segment_id = trans_unit.getAttribute('id')
+                    
+                    if segment_id in translations:
+                        # Find or create target element
+                        target_elements = trans_unit.getElementsByTagName('target')
+                        
+                        if target_elements:
+                            target = target_elements[0]
+                            
+                            # Clear existing content
+                            while target.firstChild:
+                                target.removeChild(target.firstChild)
+                        else:
+                            # Create new target element
+                            target = dom.createElement('target')
+                            target.setAttribute('xml:space', 'preserve')
+                            trans_unit.appendChild(target)
+                        
+                        # Add new text content
+                        text_node = dom.createTextNode(translations[segment_id])
+                        target.appendChild(text_node)
+                        
+                        # Update status if present
+                        if trans_unit.hasAttribute('mq:status'):
+                            trans_unit.setAttribute('mq:status', 'Translated')
+                        
+                        updated_count += 1
                 
-                updated_count += 1
+                # Serialize back to XML
+                pretty_xml = dom.toprettyxml(indent="  ")
+                
+                # Fix XML declaration if needed
+                if not pretty_xml.startswith('<?xml version="1.0" encoding="UTF-8"?>'):
+                    pretty_xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml.split('\n', 1)[1]
+                
+                return pretty_xml, updated_count
+                
+            except Exception as dom_error:
+                st.error(f"minidom update failed: {str(dom_error)}")
+                raise
         
-        # Convert to string with proper formatting
-        xml_string = ET.tostring(root, encoding='utf-8', method='xml')
-        
-        # Use minidom for pretty printing
-        dom = minidom.parseString(xml_string)
-        pretty_xml = dom.toprettyxml(indent="  ")
-        
-        # Fix XML declaration
-        if not pretty_xml.startswith('<?xml version="1.0" encoding="UTF-8"?>'):
-            pretty_xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml.split('\n', 1)[1]
-        
-        return pretty_xml, updated_count
     except Exception as e:
         st.error(f"Error updating XLIFF: {str(e)}")
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         return None, 0
 
 # Main application
 def main():
     st.title("MemoQ Translation Assistant")
     st.markdown("Process MemoQ XLIFF files with Translation Memory, Terminology, and AI assistance")
+    
+    # Add debugging toggle
+    debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
     
     # Initialize session state for tracking
     if 'processing_started' not in st.session_state:
@@ -511,6 +667,17 @@ def main():
                     st.warning(log['message'])
                 elif log['type'] == 'success':
                     st.success(log['message'])
+        
+        # Debug section only visible when debug mode is on
+        if debug_mode:
+            st.subheader("Debug Information")
+            if st.session_state.xliff_content:
+                with st.expander("XLIFF File Peek (first 500 chars)"):
+                    st.code(st.session_state.xliff_content[:500])
+            
+            if 'error_traceback' in st.session_state:
+                with st.expander("Error Traceback"):
+                    st.code(st.session_state.error_traceback)
     
     with tab3:
         st.subheader("Translation Results")
@@ -580,10 +747,61 @@ def main():
         st.session_state.batch_results = []
         
         try:
-            # Read files
-            xliff_content = xliff_file.read().decode('utf-8')
-            tmx_content = tmx_file.read().decode('utf-8')
-            csv_content = csv_file.read().decode('utf-8')
+            # Read files with better encoding handling
+            try:
+                # Try to detect encoding and read XLIFF file
+                xliff_bytes = xliff_file.read()
+                
+                # First, try UTF-8
+                try:
+                    xliff_content = xliff_bytes.decode('utf-8')
+                except UnicodeDecodeError:
+                    # Try UTF-16
+                    try:
+                        xliff_content = xliff_bytes.decode('utf-16')
+                    except UnicodeDecodeError:
+                        # Try UTF-16 with BOM detection
+                        if xliff_bytes.startswith(b'\xff\xfe') or xliff_bytes.startswith(b'\xfe\xff'):
+                            xliff_content = xliff_bytes.decode('utf-16')
+                        else:
+                            # Try Latin-1 (should always work but might give wrong characters)
+                            xliff_content = xliff_bytes.decode('latin-1')
+                            st.warning("Could not determine the correct encoding for the XLIFF file. Using Latin-1 encoding as fallback, which may result in incorrect characters.")
+                
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Successfully loaded XLIFF file",
+                    'type': 'info',
+                    'timestamp': timestamp
+                })
+                
+                # Read TMX file with similar handling
+                tmx_bytes = tmx_file.read()
+                try:
+                    tmx_content = tmx_bytes.decode('utf-8')
+                except UnicodeDecodeError:
+                    try:
+                        tmx_content = tmx_bytes.decode('utf-16')
+                    except UnicodeDecodeError:
+                        if tmx_bytes.startswith(b'\xff\xfe') or tmx_bytes.startswith(b'\xfe\xff'):
+                            tmx_content = tmx_bytes.decode('utf-16')
+                        else:
+                            tmx_content = tmx_bytes.decode('latin-1')
+                            st.warning("Could not determine the correct encoding for the TMX file. Using Latin-1 encoding as fallback.")
+                
+                # Read CSV file with similar handling
+                csv_bytes = csv_file.read()
+                try:
+                    csv_content = csv_bytes.decode('utf-8')
+                except UnicodeDecodeError:
+                    try:
+                        csv_content = csv_bytes.decode('utf-16')
+                    except UnicodeDecodeError:
+                        if csv_bytes.startswith(b'\xff\xfe') or csv_bytes.startswith(b'\xfe\xff'):
+                            csv_content = csv_bytes.decode('utf-16')
+                        else:
+                            csv_content = csv_bytes.decode('latin-1')
+                            st.warning("Could not determine the correct encoding for the CSV file. Using Latin-1 encoding as fallback.")
             
             # Get prompt template
             prompt_template = ""
@@ -603,11 +821,12 @@ def main():
                 'timestamp': timestamp
             })
             
-            # Create backup
-            tmp_dir = tempfile.mkdtemp()
+            # Create backup with binary mode
             backup_path = os.path.join(tmp_dir, f"{xliff_file.name}.backup")
-            with open(backup_path, 'w', encoding='utf-8') as f:
-                f.write(xliff_content)
+            with open(backup_path, 'wb') as f:
+                xliff_file.seek(0)
+                shutil.copyfileobj(xliff_file, f)
+                xliff_file.seek(0)  # Reset file pointer after reading
             
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
             st.session_state.logs.append({
@@ -788,9 +1007,12 @@ def main():
             if not updated_xliff:
                 raise Exception("Failed to update XLIFF file")
             
-            # Save final file
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(updated_xliff)
+            # Save final file in binary mode
+            with open(output_path, 'wb') as f:
+                if isinstance(updated_xliff, str):
+                    f.write(updated_xliff.encode('utf-8'))
+                else:
+                    f.write(updated_xliff)
             
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
             st.session_state.logs.append({
