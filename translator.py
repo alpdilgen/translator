@@ -428,8 +428,9 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
     """Get translations from AI model"""
     try:
         if api_provider == 'anthropic':
-            client = Anthropic(api_key=api_key)
+            # Simple initialization without extra parameters
             try:
+                client = Anthropic(api_key=api_key)
                 response = client.messages.create(
                     model=model,
                     max_tokens=4000,
@@ -445,12 +446,35 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
                     temperature=0.3
                 )
                 return response.content[0].text
+            except TypeError as type_error:
+                # This handles the proxies error specifically
+                if "proxies" in str(type_error):
+                    st.error("Anthropic client initialization error with proxies. Trying alternative initialization.")
+                    # Try again with a different approach
+                    import os
+                    os.environ["ANTHROPIC_API_KEY"] = api_key
+                    import anthropic
+                    client = anthropic.Anthropic()
+                    response = client.messages.create(
+                        model=model,
+                        max_tokens=4000,
+                        system=(
+                            "You are a professional translator specializing in technical documents. "
+                            "Translate precisely while preserving all formatting, tags, and special characters. "
+                            f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
+                            "Pay special attention to cultural nuances and linguistic patterns."
+                        ),
+                        messages=[
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.3
+                    )
+                    return response.content[0].text
+                else:
+                    raise
             except Exception as api_error:
                 # Get detailed error message
                 error_message = f"Anthropic API Error: {str(api_error)}"
-                if hasattr(api_error, 'status_code'):
-                    error_message += f" (Status: {api_error.status_code})"
-                
                 st.error(error_message)
                 raise Exception(error_message)
         else:  # OpenAI
