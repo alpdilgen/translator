@@ -18,56 +18,273 @@ st.set_page_config(
 
 # Utility functions
 def extract_translatable_segments(xliff_content):
-    """Extract translatable segments from XLIFF file"""
+    """Extract translatable segments from XLIFF file with debug details"""
     try:
-        # Register MemoQ namespace
-        ET.register_namespace('mq', 'MQXliff')
-        ET.register_namespace('', 'urn:oasis:names:tc:xliff:document:1.2')
+        # Add debug printout
+        st.write("Analyzing XLIFF file structure...")
         
-        # Parse XML
-        tree = ET.ElementTree(ET.fromstring(xliff_content))
-        root = tree.getroot()
-        
-        # Get namespace
-        ns = {'x': 'urn:oasis:names:tc:xliff:document:1.2', 'mq': 'MQXliff'}
-        
-        # Extract file info
-        file_nodes = root.findall('.//x:file', ns)
-        if not file_nodes:
-            return None, None, None, []
-        
-        file_node = file_nodes[0]
-        source_lang = file_node.get('source-language', 'unknown')
-        target_lang = file_node.get('target-language', 'unknown')
-        document_name = file_node.get('original', 'Unknown document')
-        
-        # Extract segments
-        segments = []
-        for trans_unit in root.findall('.//x:trans-unit', ns):
-            segment_id = trans_unit.get('id')
-            status = trans_unit.get('{MQXliff}status', '')
+        # Try first with ET
+        try:
+            # Register MemoQ namespace
+            ET.register_namespace('mq', 'MQXliff')
+            ET.register_namespace('', 'urn:oasis:names:tc:xliff:document:1.2')
             
-            source_element = trans_unit.find('.//x:source', ns)
-            target_element = trans_unit.find('.//x:target', ns)
+            # Parse XML
+            root = ET.fromstring(xliff_content)
             
-            if source_element is not None:
-                source_text = source_element.text or ""
+            # Debug structure
+            st.write(f"Root tag: {root.tag}")
+            children = list(root)
+            st.write(f"Found {len(children)} direct children under root")
+            if len(children) > 0:
+                st.write(f"First child tag: {children[0].tag}")
+            
+            # Get namespace
+            ns = {'x': 'urn:oasis:names:tc:xliff:document:1.2', 'mq': 'MQXliff'}
+            
+            # Extract file info with debugging
+            file_nodes = root.findall('.//file')
+            if not file_nodes:
+                file_nodes = root.findall('.//x:file', ns)
+            
+            st.write(f"Found {len(file_nodes)} file nodes")
+            
+            if not file_nodes:
+                # Try without namespaces
+                all_elements = list(root.iter())
+                file_count = sum(1 for elem in all_elements if elem.tag.endswith('file'))
+                st.write(f"Found {file_count} elements with tag ending in 'file'")
                 
-                # Check if this segment needs translation
-                has_target = (target_element is not None and 
-                             target_element.text and 
-                             target_element.text.strip())
+                # Try direct attribute checking for all elements
+                all_file_like = []
+                for elem in all_elements:
+                    if ('source-language' in elem.attrib or 
+                        'target-language' in elem.attrib or 
+                        'original' in elem.attrib):
+                        all_file_like.append(elem)
                 
-                if status == 'NotStarted' or not has_target:
-                    segments.append({
-                        'id': segment_id,
-                        'source': source_text,
-                        'status': status
-                    })
+                st.write(f"Found {len(all_file_like)} elements with file-like attributes")
+                
+                if len(all_file_like) > 0:
+                    file_nodes = all_file_like
+            
+            if not file_nodes:
+                return None, None, None, []
+            
+            file_node = file_nodes[0]
+            
+            # Try to get attributes in different ways
+            source_lang = file_node.get('source-language')
+            if source_lang is None:
+                source_lang = file_node.attrib.get('source-language')
+            
+            target_lang = file_node.get('target-language')
+            if target_lang is None:
+                target_lang = file_node.attrib.get('target-language')
+            
+            document_name = file_node.get('original')
+            if document_name is None:
+                document_name = file_node.attrib.get('original')
+            
+            st.write(f"Source lang: {source_lang}, Target lang: {target_lang}")
+            st.write(f"Document name: {document_name}")
+            
+            # Find all trans-unit nodes with different approaches
+            trans_units = []
+            
+            # Try with namespaces
+            trans_units = root.findall('.//x:trans-unit', ns)
+            if not trans_units:
+                # Try without namespaces
+                trans_units = root.findall('.//trans-unit')
+            
+            if not trans_units:
+                # Try iterating through all elements
+                all_elements = list(root.iter())
+                trans_units = [elem for elem in all_elements if elem.tag.endswith('trans-unit')]
+            
+            st.write(f"Found {len(trans_units)} translation units")
+            
+            # Extract segments
+            segments = []
+            
+            # Show sample of first trans-unit if available
+            if len(trans_units) > 0:
+                sample_unit = trans_units[0]
+                st.write("Sample trans-unit structure:")
+                st.write(f"  - Attributes: {sample_unit.attrib}")
+                children = list(sample_unit)
+                st.write(f"  - Children: {[child.tag for child in children]}")
+            
+            for trans_unit in trans_units:
+                try:
+                    # Get ID through various approaches
+                    segment_id = trans_unit.get('id')
+                    if segment_id is None:
+                        segment_id = trans_unit.attrib.get('id')
+                    
+                    if segment_id is None:
+                        # Generate a random ID if none exists
+                        segment_id = str(uuid.uuid4())
+                    
+                    # Get status through various approaches
+                    status = trans_unit.get('{MQXliff}status')
+                    if status is None:
+                        status = trans_unit.attrib.get('{MQXliff}status')
+                    if status is None:
+                        status = trans_unit.get('mq:status')
+                    if status is None:
+                        status = trans_unit.attrib.get('mq:status')
+                    
+                    # Find source element
+                    source_element = None
+                    target_element = None
+                    
+                    # Try with namespaces
+                    source_element = trans_unit.find('.//x:source', ns)
+                    if source_element is None:
+                        source_element = trans_unit.find('source')
+                    
+                    target_element = trans_unit.find('.//x:target', ns)
+                    if target_element is None:
+                        target_element = trans_unit.find('target')
+                    
+                    # If still not found, look through children directly
+                    if source_element is None:
+                        for child in trans_unit:
+                            if child.tag.endswith('source'):
+                                source_element = child
+                                break
+                    
+                    if target_element is None:
+                        for child in trans_unit:
+                            if child.tag.endswith('target'):
+                                target_element = child
+                                break
+                    
+                    if source_element is not None:
+                        # Extract text content through various approaches
+                        source_text = source_element.text
+                        if source_text is None or source_text.strip() == '':
+                            # Try to get all text from children
+                            source_text = ''.join(source_element.itertext())
+                        
+                        if source_text is None:
+                            source_text = ""
+                        
+                        # Check if target is empty or missing
+                        has_target = False
+                        if target_element is not None:
+                            target_text = target_element.text
+                            if target_text is None:
+                                target_text = ''.join(target_element.itertext())
+                            
+                            has_target = target_text is not None and target_text.strip() != ''
+                        
+                        # Add to segments - include ALL segments for testing purposes
+                        segments.append({
+                            'id': segment_id,
+                            'source': source_text,
+                            'status': status or 'Unknown'
+                        })
+                
+                except Exception as segment_error:
+                    st.warning(f"Error processing a segment: {str(segment_error)}")
+                    continue
+            
+            st.write(f"Extracted {len(segments)} segments")
+            
+            if len(segments) > 0:
+                st.write("Sample first segment:")
+                st.write(segments[0])
+            
+            return source_lang, target_lang, document_name, segments
         
-        return source_lang, target_lang, document_name, segments
+        except Exception as et_error:
+            st.error(f"ElementTree approach failed: {str(et_error)}")
+            
+            # Try with minidom as fallback
+            try:
+                st.write("Trying with minidom...")
+                dom = minidom.parseString(xliff_content)
+                root = dom.documentElement
+                
+                # Get file node
+                file_nodes = dom.getElementsByTagName('file')
+                st.write(f"Found {len(file_nodes)} file nodes with minidom")
+                
+                if not file_nodes:
+                    return None, None, None, []
+                
+                file_node = file_nodes[0]
+                source_lang = file_node.getAttribute('source-language')
+                target_lang = file_node.getAttribute('target-language')
+                document_name = file_node.getAttribute('original')
+                
+                st.write(f"Source lang: {source_lang}, Target lang: {target_lang}")
+                
+                # Get all trans-units
+                trans_units = dom.getElementsByTagName('trans-unit')
+                st.write(f"Found {len(trans_units)} translation units with minidom")
+                
+                segments = []
+                for trans_unit in trans_units:
+                    try:
+                        segment_id = trans_unit.getAttribute('id')
+                        status = trans_unit.getAttribute('mq:status')
+                        
+                        # Find source and target elements
+                        source_elements = trans_unit.getElementsByTagName('source')
+                        target_elements = trans_unit.getElementsByTagName('target')
+                        
+                        if source_elements:
+                            source_element = source_elements[0]
+                            source_text = ""
+                            
+                            # Extract text from source
+                            for node in source_element.childNodes:
+                                if node.nodeType == node.TEXT_NODE:
+                                    source_text += node.data
+                            
+                            # Check if target is empty
+                            has_target = False
+                            if target_elements:
+                                target_element = target_elements[0]
+                                target_text = ""
+                                
+                                for node in target_element.childNodes:
+                                    if node.nodeType == node.TEXT_NODE:
+                                        target_text += node.data
+                                
+                                has_target = target_text.strip() != ""
+                            
+                            # Add to segments - include ALL segments for testing
+                            segments.append({
+                                'id': segment_id,
+                                'source': source_text,
+                                'status': status or 'Unknown'
+                            })
+                    
+                    except Exception as segment_error:
+                        st.warning(f"Error processing a segment with minidom: {str(segment_error)}")
+                        continue
+                
+                st.write(f"Extracted {len(segments)} segments with minidom")
+                
+                if len(segments) > 0:
+                    st.write("Sample first segment (minidom):")
+                    st.write(segments[0])
+                
+                return source_lang, target_lang, document_name, segments
+            
+            except Exception as dom_error:
+                st.error(f"minidom approach also failed: {str(dom_error)}")
+                return None, None, None, []
+    
     except Exception as e:
         st.error(f"Error parsing XLIFF file: {str(e)}")
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         return None, None, None, []
 
 def extract_tm_matches(tmx_content, source_lang, target_lang, source_segments, match_threshold):
@@ -726,7 +943,13 @@ def main():
                 'timestamp': timestamp
             })
             
+            # Add a check for debug mode to show/hide debug info
+            show_debug = debug_mode
+            
             # Extract segments from XLIFF
+            if show_debug:
+                st.write("Extracting segments from XLIFF file...")
+                
             source_lang, target_lang, document_name, segments = extract_translatable_segments(xliff_content)
             
             if not segments:
@@ -736,8 +959,71 @@ def main():
                     'type': 'error',
                     'timestamp': timestamp
                 })
-                st.session_state.processing_complete = True
-                return
+                
+                # Show the first part of the XLIFF content to help debug
+                if show_debug:
+                    st.error("Failed to extract segments. Here's a preview of the XLIFF content:")
+                    st.code(xliff_content[:500])
+                    
+                    # Try to extract file info directly 
+                    try:
+                        dom = minidom.parseString(xliff_content)
+                        st.write("XLIFF Structure Analysis:")
+                        root_element = dom.documentElement
+                        st.write(f"Root element: {root_element.tagName}")
+                        
+                        # List all elements by tag name
+                        element_counts = {}
+                        for child in root_element.childNodes:
+                            if child.nodeType == child.ELEMENT_NODE:
+                                tag_name = child.tagName
+                                if tag_name in element_counts:
+                                    element_counts[tag_name] += 1
+                                else:
+                                    element_counts[tag_name] = 1
+                        
+                        st.write("First-level elements:")
+                        st.write(element_counts)
+                        
+                        # List all trans-unit elements
+                        trans_units = dom.getElementsByTagName("trans-unit")
+                        st.write(f"Found {len(trans_units)} trans-unit elements directly")
+                        
+                        # Count all elements
+                        all_elements = dom.getElementsByTagName("*")
+                        st.write(f"Total elements in document: {len(all_elements)}")
+                        
+                        # Try forcing segment extraction
+                        forced_segments = []
+                        for tu in trans_units:
+                            try:
+                                segment_id = tu.getAttribute('id') or str(uuid.uuid4())
+                                sources = tu.getElementsByTagName('source')
+                                if sources:
+                                    source_text = sources[0].firstChild.nodeValue if sources[0].firstChild else ""
+                                    forced_segments.append({
+                                        'id': segment_id,
+                                        'source': source_text,
+                                        'status': 'Forced'
+                                    })
+                            except Exception as e:
+                                st.write(f"Error extracting segment: {e}")
+                        
+                        if forced_segments:
+                            st.write(f"Forced extraction found {len(forced_segments)} segments")
+                            st.write("Continuing with these segments")
+                            segments = forced_segments
+                        else:
+                            st.session_state.processing_complete = True
+                            return
+                            
+                    except Exception as analysis_error:
+                        st.error(f"Analysis error: {str(analysis_error)}")
+                        st.session_state.processing_complete = True
+                        return
+                else:
+                    st.session_state.processing_complete = True
+                    return
             
             # Prepare batches
             batches = []
@@ -764,13 +1050,19 @@ def main():
             
             # Process batches
             for batch_index, batch in enumerate(batches):
+                # Update progress immediately at start of batch
+                batch_progress = (batch_index) / len(batches)
                 st.session_state.current_batch = batch_index + 1
-                st.session_state.progress = batch_index / len(batches)
+                st.session_state.progress = batch_progress
                 
-                # Update progress display
-                progress_placeholder.progress(st.session_state.progress)
-                if st.session_state.total_batches > 0:
-                    status_placeholder.markdown(f"**Processing:** Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+                # Update both progress displays
+                progress_placeholder.progress(batch_progress)
+                main_progress.progress(batch_progress)
+                status_placeholder.markdown(f"**Processing:** Batch {batch_index + 1}/{len(batches)} ({int(batch_progress * 100)}%)")
+                main_status.text(f"Processing batch {batch_index + 1} of {len(batches)} ({int(batch_progress * 100)}%)")
+                
+                # Force UI to update
+                time.sleep(0.1)
                 
                 # Process the current batch
                 batch_result = {'batch_index': batch_index}
