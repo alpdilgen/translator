@@ -635,6 +635,12 @@ def main():
     st.title("MemoQ Translation Assistant")
     st.markdown("Process MemoQ XLIFF files with Translation Memory, Terminology, and AI assistance")
     
+    # Create main progress indicators
+    main_progress_container = st.container()
+    with main_progress_container:
+        main_progress = st.progress(0)
+        main_status = st.empty()
+    
     # Add debugging toggle
     debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
     
@@ -927,21 +933,51 @@ def main():
                 'timestamp': timestamp
             })
             
-            # Create backup with binary mode
+            # Create temporary directory if not already created
             if st.session_state.tmp_dir is None:
-                st.session_state.tmp_dir = tempfile.mkdtemp()
-            backup_path = os.path.join(st.session_state.tmp_dir, f"{xliff_file.name}.backup")
-            with open(backup_path, 'wb') as f:
-                xliff_file.seek(0)
-                shutil.copyfileobj(xliff_file, f)
-                xliff_file.seek(0)  # Reset file pointer after reading
+                try:
+                    st.session_state.tmp_dir = tempfile.mkdtemp()
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': f"Created temporary directory: {st.session_state.tmp_dir}",
+                        'type': 'info',
+                        'timestamp': timestamp
+                    })
+                except Exception as temp_dir_error:
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': f"Error creating temporary directory: {str(temp_dir_error)}",
+                        'type': 'error',
+                        'timestamp': timestamp
+                    })
+                    st.error(f"Failed to create temporary directory: {str(temp_dir_error)}")
+                    st.session_state.processing_complete = True
+                    return
             
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-            st.session_state.logs.append({
-                'message': f"Created backup of XLIFF file",
-                'type': 'info',
-                'timestamp': timestamp
-            })
+            # Create backup with binary mode
+            try:
+                backup_path = os.path.join(st.session_state.tmp_dir, f"{xliff_file.name}.backup")
+                with open(backup_path, 'wb') as f:
+                    xliff_file.seek(0)
+                    shutil.copyfileobj(xliff_file, f)
+                    xliff_file.seek(0)  # Reset file pointer after reading
+                
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Created backup of XLIFF file at {backup_path}",
+                    'type': 'info',
+                    'timestamp': timestamp
+                })
+            except Exception as backup_error:
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Error creating backup: {str(backup_error)}",
+                    'type': 'error',
+                    'timestamp': timestamp
+                })
+                st.error(f"Failed to create backup: {str(backup_error)}")
+                st.session_state.processing_complete = True
+                return
             
             # Add a check for debug mode to show/hide debug info
             show_debug = debug_mode
@@ -1193,34 +1229,120 @@ def main():
                 'timestamp': timestamp
             })
             
-            updated_xliff, updated_count = update_xliff_with_translations(st.session_state.xliff_content, all_translations)
-            
-            if not updated_xliff:
-                raise Exception("Failed to update XLIFF file")
+            try:
+                updated_xliff, updated_count = update_xliff_with_translations(st.session_state.xliff_content, all_translations)
+                
+                if not updated_xliff:
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': "Failed to update XLIFF file - null result returned",
+                        'type': 'error',
+                        'timestamp': timestamp
+                    })
+                    raise Exception("Failed to update XLIFF file - null result returned")
+            except Exception as update_error:
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Error updating XLIFF: {str(update_error)}",
+                    'type': 'error',
+                    'timestamp': timestamp
+                })
+                main_progress.progress(1.0)  # Show complete even though error
+                main_status.text("Error updating XLIFF file")
+                
+                # Try to save the original with translations as a simple text file
+                try:
+                    text_output = "# Translation Results\n\n"
+                    for seg_id, translation in all_translations.items():
+                        # Find the original segment for this ID
+                        original = ""
+                        for segment in segments:
+                            if segment['id'] == seg_id:
+                                original = segment['source']
+                                break
+                        
+                        text_output += f"ID: {seg_id}\n"
+                        text_output += f"Source: {original}\n"
+                        text_output += f"Target: {translation}\n\n"
+                    
+                    text_path = os.path.join(st.session_state.tmp_dir, "translations.txt")
+                    with open(text_path, 'w', encoding='utf-8') as f:
+                        f.write(text_output)
+                    
+                    st.session_state.translated_file_path = text_path
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': f"Saved translations as text file instead: {text_path}",
+                        'type': 'warning',
+                        'timestamp': timestamp
+                    })
+                except Exception as text_save_error:
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': f"Failed to save translations as text: {str(text_save_error)}",
+                        'type': 'error',
+                        'timestamp': timestamp
+                    })
+                
+                st.session_state.processing_complete = True
+                return
             
             # Save final file in binary mode
-            with open(output_path, 'wb') as f:
-                if isinstance(updated_xliff, str):
-                    f.write(updated_xliff.encode('utf-8'))
-                else:
-                    f.write(updated_xliff)
-            
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-            st.session_state.logs.append({
-                'message': f"Updated {updated_count} segments in the XLIFF file",
-                'type': 'success',
-                'timestamp': timestamp
-            })
-            
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-            st.session_state.logs.append({
-                'message': f"Saved translated XLIFF to {os.path.basename(output_path)}",
-                'type': 'success',
-                'timestamp': timestamp
-            })
-            
-            # Store translated file path for download
-            st.session_state.translated_file_path = output_path
+            try:
+                with open(output_path, 'wb') as f:
+                    if isinstance(updated_xliff, str):
+                        f.write(updated_xliff.encode('utf-8'))
+                    else:
+                        f.write(updated_xliff)
+                
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Updated {updated_count} segments in the XLIFF file",
+                    'type': 'success',
+                    'timestamp': timestamp
+                })
+                
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Saved translated XLIFF to {os.path.basename(output_path)}",
+                    'type': 'success',
+                    'timestamp': timestamp
+                })
+                
+                # Store translated file path for download
+                st.session_state.translated_file_path = output_path
+            except Exception as save_error:
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': f"Error saving translated file: {str(save_error)}",
+                    'type': 'error',
+                    'timestamp': timestamp
+                })
+                st.error(f"Failed to save translated file: {str(save_error)}")
+                
+                # Try to save to a different location as fallback
+                try:
+                    fallback_path = os.path.join(tempfile.gettempdir(), f"translated_{uuid.uuid4()}.mqxliff")
+                    with open(fallback_path, 'wb') as f:
+                        if isinstance(updated_xliff, str):
+                            f.write(updated_xliff.encode('utf-8'))
+                        else:
+                            f.write(updated_xliff)
+                    
+                    st.session_state.translated_file_path = fallback_path
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': f"Saved to fallback location: {fallback_path}",
+                        'type': 'warning',
+                        'timestamp': timestamp
+                    })
+                except Exception as fallback_error:
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': f"Fallback save also failed: {str(fallback_error)}",
+                        'type': 'error',
+                        'timestamp': timestamp
+                    })
             
             # Mark processing as complete
             st.session_state.processing_complete = True
