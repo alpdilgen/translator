@@ -1522,7 +1522,7 @@ def main():
             st.rerun()
 
 if __name__ == "__main__":
-    main():%M:%S')
+    main()
                     msg = f"Processing batch {batch_index + 1}/{len(batches)} ({len(batch)} segments)"
                     st.session_state.logs.append({
                         'message': msg,
