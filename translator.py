@@ -912,25 +912,25 @@ def save_translated_xliff(xliff_content, filename):
         logger.error(f"Error saving translated XLIFF file: {str(e)}")
         return None
 
-# Display log file information
-st.sidebar.title("Log Information")
-if 'log_filepath' in locals():
-    st.sidebar.info(f"Log file: {os.path.basename(log_filepath)}")
-    st.sidebar.info(f"Location: {log_dir}")
-    
-    # Add download button for log file
-    if os.path.exists(log_filepath):
-        with open(log_filepath, 'r') as log_file:
-            log_content = log_file.read()
-            st.sidebar.download_button(
-                label="Download Log File",
-                data=log_content,
-                file_name=os.path.basename(log_filepath),
-                mime="text/plain"
-            )
-
 # Main application
 def main():
+    # Display log file information
+    st.sidebar.title("Log Information")
+    if 'log_filepath' in locals():
+        st.sidebar.info(f"Log file: {os.path.basename(log_filepath)}")
+        st.sidebar.info(f"Location: {log_dir}")
+        
+        # Add download button for log file
+        if os.path.exists(log_filepath):
+            with open(log_filepath, 'r') as log_file:
+                log_content = log_file.read()
+                st.sidebar.download_button(
+                    label="Download Log File",
+                    data=log_content,
+                    file_name=os.path.basename(log_filepath),
+                    mime="text/plain"
+                )
+    
     st.title("MemoQ Translation Assistant")
     st.markdown("Process MemoQ XLIFF files with Translation Memory, Terminology, and AI assistance")
     
@@ -1479,6 +1479,21 @@ def main():
                     
                     # Add batch result
                     st.session_state.batch_results.append(batch_result)
+                    
+                    # Small delay for UI refresh
+                    time.sleep(0.1)
+                    
+                except Exception as e:
+                    error_msg = f"Error processing batch {batch_index + 1}: {str(e)}"
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': error_msg,
+                        'type': 'error',
+                        'timestamp': timestamp
+                    })
+                    logger.error(error_msg)
+                    batch_result['error'] = str(e)
+                    st.session_state.batch_results.append(batch_result)
             
             # Update XLIFF with translations
             timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
@@ -1585,18 +1600,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                    
-                    # Small delay for UI refresh
-                    time.sleep(0.1)
-                    
-                except Exception as e:
-                    error_msg = f"Error processing batch {batch_index + 1}: {str(e)}"
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': error_msg,
-                        'type': 'error',
-                        'timestamp': timestamp
-                    })
-                    logger.error(error_msg)
-                    batch_result['error'] = str(e)
-                    st.session_state.batch_results.append(batch_result)
