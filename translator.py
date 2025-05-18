@@ -628,9 +628,9 @@ def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, b
         return ""
 
 # Function to get translations from AI
-def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target_lang):
+def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target_lang, temperature=0.3):
     """Get translations from AI model using direct API calls"""
-    logger.info(f"Sending request to {api_provider} API ({model})")
+    logger.info(f"Sending request to {api_provider} API ({model}) with temperature {temperature}")
     import requests
     import json
     
@@ -646,7 +646,7 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             data = {
                 "model": model,
                 "max_tokens": 4000,
-                "temperature": 0.3,
+                "temperature": temperature,
                 "system": (
                     "You are a professional translator specializing in technical documents. "
                     "Translate precisely while preserving all formatting, tags, and special characters. "
@@ -696,7 +696,7 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
                     {"role": "user", "content": prompt}
                 ],
                 "max_tokens": 4000,
-                "temperature": 0.3
+                "temperature": temperature
             }
             
             response = requests.post(
@@ -1023,6 +1023,10 @@ def main():
             match_threshold = st.slider("TM Match Threshold (%)", 
                                        min_value=60, max_value=100, value=75, 
                                        help="Minimum similarity percentage for TM matches")
+            
+            temperature = st.slider("AI Temperature", 
+                                  min_value=0.0, max_value=1.0, value=0.3, step=0.1,
+                                  help="Controls randomness in translation (0.0 = more deterministic, 1.0 = more creative)")
             
             custom_prompt_text = st.text_area("Additional prompt instructions (optional)", 
                                              height=100, 
@@ -1432,7 +1436,7 @@ def main():
                     })
                     
                     ai_response = get_ai_translation(
-                        api_provider, api_key, model, prompt, source_lang, target_lang
+                        api_provider, api_key, model, prompt, source_lang, target_lang, temperature
                     )
                     
                     if not ai_response:
