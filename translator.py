@@ -1599,4 +1599,161 @@ def main():
             st.rerun()
 
 if __name__ == "__main__":
+    main()(error_msg)
+                    
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': "Received translation response",
+                        'type': 'info',
+                        'timestamp': timestamp
+                    })
+                    
+                    # Parse AI response
+                    translations = parse_ai_response(ai_response, batch)
+                    
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    msg = f"Parsed {len(translations)} translations from AI response"
+                    st.session_state.logs.append({
+                        'message': msg,
+                        'type': 'info',
+                        'timestamp': timestamp
+                    })
+                    
+                    # Add to all translations
+                    all_translations.update(translations)
+                    
+                    # Update batch result
+                    batch_result['segments_processed'] = len(batch)
+                    batch_result['translations_received'] = len(translations)
+                    
+                    # Update progress at end of batch
+                    batch_progress = (batch_index + 1) / len(batches)
+                    st.session_state.current_batch = batch_index + 1
+                    st.session_state.progress = batch_progress
+                    
+                    # Update progress display
+                    progress_placeholder.progress(batch_progress)
+                    
+                    # Add batch result
+                    st.session_state.batch_results.append(batch_result)
+                    
+                    # Small delay for UI refresh
+                    time.sleep(0.1)
+                    
+                except Exception as e:
+                    error_msg = f"Error processing batch {batch_index + 1}: {str(e)}"
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': error_msg,
+                        'type': 'error',
+                        'timestamp': timestamp
+                    })
+                    logger.error(error_msg)
+                    batch_result['error'] = str(e)
+                    st.session_state.batch_results.append(batch_result)
+            
+            # Update XLIFF with translations
+            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+            msg = f"Updating XLIFF file with {len(all_translations)} translations"
+            st.session_state.logs.append({
+                'message': msg,
+                'type': 'info',
+                'timestamp': timestamp
+            })
+            logger.info(msg)
+            
+            # Try to update XLIFF
+            try:
+                updated_xliff, updated_count = update_xliff_with_translations(st.session_state.xliff_content, all_translations)
+                
+                if not updated_xliff:
+                    raise Exception("Failed to update XLIFF file")
+                
+                # Save translated XLIFF
+                final_path = save_translated_xliff(updated_xliff, xliff_file.name)
+                
+                if not final_path:
+                    raise Exception("Failed to save translated XLIFF file")
+                
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                msg = f"Updated {updated_count} segments in the XLIFF file"
+                st.session_state.logs.append({
+                    'message': msg,
+                    'type': 'success',
+                    'timestamp': timestamp
+                })
+                
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                msg = f"Saved translated XLIFF to {os.path.basename(final_path)}"
+                st.session_state.logs.append({
+                    'message': msg,
+                    'type': 'success',
+                    'timestamp': timestamp
+                })
+                
+                # Store translated file path for download
+                st.session_state.translated_file_path = final_path
+                
+            except Exception as update_error:
+                # Log error
+                error_msg = f"Error updating or saving XLIFF: {str(update_error)}"
+                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                st.session_state.logs.append({
+                    'message': error_msg,
+                    'type': 'error',
+                    'timestamp': timestamp
+                })
+                logger.error(error_msg)
+                
+                # Try to save as text file instead
+                text_path = save_translations_as_text(segments, all_translations, xliff_file.name)
+                
+                if text_path:
+                    msg = f"Saved translations as text file instead: {os.path.basename(text_path)}"
+                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+                    st.session_state.logs.append({
+                        'message': msg,
+                        'type': 'warning',
+                        'timestamp': timestamp
+                    })
+                    logger.warning(msg)
+                    
+                    # Store text file path for download
+                    st.session_state.translated_file_path = text_path
+            
+            # Log completion
+            logger.info("=" * 50)
+            logger.info(f"Translation process completed")
+            logger.info(f"Segments processed: {len(segments)}")
+            logger.info(f"Segments translated: {len(all_translations)}")
+            logger.info(f"Translated file: {st.session_state.translated_file_path}")
+            logger.info("=" * 50)
+            
+            # Mark processing as complete
+            st.session_state.processing_complete = True
+            st.session_state.progress = 1.0
+            
+            # Show completion message
+            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+            st.session_state.logs.append({
+                'message': "Translation process completed successfully",
+                'type': 'success',
+                'timestamp': timestamp
+            })
+            
+            # Refresh UI
+            st.rerun()
+            
+        except Exception as e:
+            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
+            st.session_state.logs.append({
+                'message': f"Error: {str(e)}",
+                'type': 'error',
+                'timestamp': timestamp
+            })
+            logger.error(f"Error: {str(e)}")
+            st.session_state.processing_complete = True
+            st.rerun()
+
+if __name__ == "__main__":
     main()
