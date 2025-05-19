@@ -11,30 +11,71 @@ import requests
 import json
 import logging
 import datetime
+import io
 from pathlib import Path
 
-# Set up logging configuration
-log_dir = os.path.join(os.getcwd(), 'logs')
-os.makedirs(log_dir, exist_ok=True)
-log_filename = f"mqxliff_translator_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-log_filepath = os.path.join(log_dir, log_filename)
+# Set up enhanced logging for the application
+def setup_logging():
+    """Set up enhanced logging for the application"""
+    log_dir = os.path.join(os.getcwd(), 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_filename = f"mqxliff_translator_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_filepath = os.path.join(log_dir, log_filename)
+    
+    # Configure logging with more detailed format
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.FileHandler(log_filepath, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+    
+    logger = logging.getLogger('mqxliff_translator')
+    
+    # Add a custom handler to capture all logs to a string buffer for UI display
+    if not hasattr(st.session_state, 'log_capture_string'):
+        st.session_state.log_capture_string = io.StringIO()
+        string_handler = logging.StreamHandler(st.session_state.log_capture_string)
+        string_handler.setLevel(logging.INFO)
+        string_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(string_handler)
+    
+    return logger, log_filepath
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_filepath),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger('mqxliff_translator')
+# Initialize logging
+logger, log_filepath = setup_logging()
 
 # Log start of application
 logger.info("=" * 80)
 logger.info("MemoQ Translator Application Started")
 logger.info("=" * 80)
+
+# Helper function to log to both the logger and the session state
+def log_message(message, level="info"):
+    """Log a message to both the logger and the session state"""
+    timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+    
+    if level == "info":
+        logger.info(message)
+    elif level == "warning":
+        logger.warning(message)
+    elif level == "error":
+        logger.error(message)
+    elif level == "success":
+        logger.info(f"SUCCESS: {message}")
+    
+    # Also add to session state logs for UI display
+    if 'logs' not in st.session_state:
+        st.session_state.logs = []
+    
+    st.session_state.logs.append({
+        'message': message,
+        'type': level,
+        'timestamp': timestamp
+    })
 
 # Configure streamlit page
 st.set_page_config(
@@ -46,7 +87,7 @@ st.set_page_config(
 # Function to create backup of uploaded file
 def create_backup(file_object, file_name):
     """Create a backup of the uploaded file"""
-    logger.info(f"Creating backup of file: {file_name}")
+    log_message(f"Creating backup of file: {file_name}")
     
     try:
         # Create backup directory
@@ -71,19 +112,19 @@ def create_backup(file_object, file_name):
         # Reset file pointer again for further processing
         file_object.seek(0)
         
-        logger.info(f"Backup created successfully at: {backup_path}")
+        log_message(f"Backup created successfully at: {backup_path}")
         return backup_path
     
     except Exception as e:
         error_msg = f"Error creating backup: {str(e)}"
-        logger.error(error_msg)
+        log_message(error_msg, level="error")
         return None
 
 # Function to extract segments from XLIFF file
 def extract_translatable_segments(xliff_content):
     """Extract translatable segments from XLIFF file"""
     try:
-        logger.info("Extracting translatable segments from XLIFF file")
+        log_message("Extracting translatable segments from XLIFF file")
         
         # Try first with ElementTree
         try:
@@ -93,7 +134,7 @@ def extract_translatable_segments(xliff_content):
             
             # Parse XML
             root = ET.fromstring(xliff_content)
-            logger.info(f"Successfully parsed XLIFF with ElementTree")
+            log_message(f"Successfully parsed XLIFF with ElementTree")
             
             # Get namespace
             ns = {'x': 'urn:oasis:names:tc:xliff:document:1.2', 'mq': 'MQXliff'}
@@ -104,7 +145,7 @@ def extract_translatable_segments(xliff_content):
                 file_nodes = root.findall('.//x:file', ns)
             
             if not file_nodes:
-                logger.error("Could not find any file nodes in the XLIFF file")
+                log_message("Could not find any file nodes in the XLIFF file", level="error")
                 return None, None, None, []
             
             file_node = file_nodes[0]
@@ -122,7 +163,7 @@ def extract_translatable_segments(xliff_content):
             if document_name is None:
                 document_name = file_node.attrib.get('original')
             
-            logger.info(f"File info: source_lang={source_lang}, target_lang={target_lang}, document_name={document_name}")
+            log_message(f"File info: source_lang={source_lang}, target_lang={target_lang}, document_name={document_name}")
             
             # Find trans-unit nodes
             trans_units = []
@@ -130,7 +171,7 @@ def extract_translatable_segments(xliff_content):
             if not trans_units:
                 trans_units = root.findall('.//trans-unit')
             
-            logger.info(f"Found {len(trans_units)} translation units")
+            log_message(f"Found {len(trans_units)} translation units")
             
             # Extract segments
             segments = []
@@ -192,41 +233,41 @@ def extract_translatable_segments(xliff_content):
                         })
                 
                 except Exception as segment_error:
-                    logger.warning(f"Error processing segment: {str(segment_error)}")
+                    log_message(f"Error processing segment: {str(segment_error)}", level="warning")
                     continue
             
-            logger.info(f"Successfully extracted {len(segments)} segments from XLIFF file")
+            log_message(f"Successfully extracted {len(segments)} segments from XLIFF file")
             
             # Check if we should override languages based on session state
             if hasattr(st.session_state, 'override_source_lang'):
                 if st.session_state.override_source_lang != "Auto-detect (from XLIFF)":
                     old_source_lang = source_lang
                     source_lang = get_language_code(st.session_state.override_source_lang)
-                    logger.info(f"Source language override: {old_source_lang} -> {source_lang}")
+                    log_message(f"Source language override: {old_source_lang} -> {source_lang}")
             
             if hasattr(st.session_state, 'override_target_lang'):
                 if st.session_state.override_target_lang != "Auto-detect (from XLIFF)":
                     old_target_lang = target_lang
                     target_lang = get_language_code(st.session_state.override_target_lang)
-                    logger.info(f"Target language override: {old_target_lang} -> {target_lang}")
+                    log_message(f"Target language override: {old_target_lang} -> {target_lang}")
             
             return source_lang, target_lang, document_name, segments
         
         except Exception as et_error:
-            logger.error(f"ElementTree approach failed: {str(et_error)}")
+            log_message(f"ElementTree approach failed: {str(et_error)}", level="error")
             
             # Try with minidom as fallback
             try:
-                logger.info("Trying XLIFF parsing with minidom")
+                log_message("Trying XLIFF parsing with minidom")
                 dom = minidom.parseString(xliff_content)
                 root = dom.documentElement
                 
                 # Get file node
                 file_nodes = dom.getElementsByTagName('file')
-                logger.info(f"Found {len(file_nodes)} file nodes with minidom")
+                log_message(f"Found {len(file_nodes)} file nodes with minidom")
                 
                 if not file_nodes:
-                    logger.error("No file nodes found with minidom approach")
+                    log_message("No file nodes found with minidom approach", level="error")
                     return None, None, None, []
                 
                 file_node = file_nodes[0]
@@ -234,11 +275,11 @@ def extract_translatable_segments(xliff_content):
                 target_lang = file_node.getAttribute('target-language')
                 document_name = file_node.getAttribute('original')
                 
-                logger.info(f"File info from minidom: source_lang={source_lang}, target_lang={target_lang}")
+                log_message(f"File info from minidom: source_lang={source_lang}, target_lang={target_lang}")
                 
                 # Get all trans-units
                 trans_units = dom.getElementsByTagName('trans-unit')
-                logger.info(f"Found {len(trans_units)} translation units with minidom")
+                log_message(f"Found {len(trans_units)} translation units with minidom")
                 
                 segments = []
                 for trans_unit in trans_units:
@@ -279,41 +320,41 @@ def extract_translatable_segments(xliff_content):
                             })
                     
                     except Exception as segment_error:
-                        logger.warning(f"Error processing segment with minidom: {str(segment_error)}")
+                        log_message(f"Error processing segment with minidom: {str(segment_error)}", level="warning")
                         continue
                 
-                logger.info(f"Successfully extracted {len(segments)} segments with minidom")
+                log_message(f"Successfully extracted {len(segments)} segments with minidom")
                 
                 # Check if we should override languages based on session state
                 if hasattr(st.session_state, 'override_source_lang'):
                     if st.session_state.override_source_lang != "Auto-detect (from XLIFF)":
                         old_source_lang = source_lang
                         source_lang = get_language_code(st.session_state.override_source_lang)
-                        logger.info(f"Source language override: {old_source_lang} -> {source_lang}")
+                        log_message(f"Source language override: {old_source_lang} -> {source_lang}")
                 
                 if hasattr(st.session_state, 'override_target_lang'):
                     if st.session_state.override_target_lang != "Auto-detect (from XLIFF)":
                         old_target_lang = target_lang
                         target_lang = get_language_code(st.session_state.override_target_lang)
-                        logger.info(f"Target language override: {old_target_lang} -> {target_lang}")
+                        log_message(f"Target language override: {old_target_lang} -> {target_lang}")
                 
                 return source_lang, target_lang, document_name, segments
             
             except Exception as dom_error:
-                logger.error(f"minidom approach also failed: {str(dom_error)}")
+                log_message(f"minidom approach also failed: {str(dom_error)}", level="error")
                 return None, None, None, []
     
     except Exception as e:
-        logger.error(f"Error parsing XLIFF file: {str(e)}")
+        log_message(f"Error parsing XLIFF file: {str(e)}", level="error")
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        log_message(f"Traceback: {traceback.format_exc()}", level="error")
         return None, None, None, []
 
 # Function for TM matching
 def extract_tm_matches(tmx_content, source_lang, target_lang, source_segments, match_threshold):
     """Extract translation memory matches from TMX file"""
     try:
-        logger.info(f"Finding TM matches with threshold {match_threshold}%")
+        log_message(f"Finding TM matches with threshold {match_threshold}%")
         tree = ET.ElementTree(ET.fromstring(tmx_content))
         root = tree.getroot()
         
@@ -366,10 +407,10 @@ def extract_tm_matches(tmx_content, source_lang, target_lang, source_segments, m
                 if len(unique_matches) >= 5:  # Limit to 5 matches
                     break
         
-        logger.info(f"Found {len(unique_matches)} TM matches above threshold")
+        log_message(f"Found {len(unique_matches)} TM matches above threshold")
         return unique_matches
     except Exception as e:
-        logger.error(f"Error extracting TM matches: {str(e)}")
+        log_message(f"Error extracting TM matches: {str(e)}", level="error")
         return []
 
 # Simple similarity calculation
@@ -393,11 +434,11 @@ def calculate_similarity(text1, text2):
 def extract_terminology(csv_content, source_segments):
     """Extract terminology matches from CSV file"""
     try:
-        logger.info("Extracting terminology matches")
+        log_message("Extracting terminology matches")
         df = pd.read_csv(pd.StringIO(csv_content))
         
         if len(df.columns) < 2:
-            logger.warning("CSV file must have at least 2 columns")
+            log_message("CSV file must have at least 2 columns", level="warning")
             return []
         
         # Extract source and target terms
@@ -422,10 +463,10 @@ def extract_terminology(csv_content, source_segments):
                             'target': target_term
                         })
         
-        logger.info(f"Found {len(term_matches)} terminology matches")
+        log_message(f"Found {len(term_matches)} terminology matches")
         return term_matches
     except Exception as e:
-        logger.error(f"Error extracting terminology: {str(e)}")
+        log_message(f"Error extracting terminology: {str(e)}", level="error")
         return []
 
 # Get language name from code
@@ -584,7 +625,7 @@ def get_language_options():
 def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, batch, tm_matches, term_matches):
     """Create a prompt for the AI model"""
     try:
-        logger.info("Creating AI prompt")
+        log_message("Creating AI prompt")
         prompt = prompt_template + '\n\n' if prompt_template else ''
         
         # Add source and target language information
@@ -621,16 +662,16 @@ def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, b
         for i, segment in enumerate(batch):
             prompt += f"[{i+1}] {segment['source']}\n"
         
-        logger.info(f"Created prompt with {len(batch)} segments")
+        log_message(f"Created prompt with {len(batch)} segments")
         return prompt
     except Exception as e:
-        logger.error(f"Error creating prompt: {str(e)}")
+        log_message(f"Error creating prompt: {str(e)}", level="error")
         return ""
 
 # Function to get translations from AI
 def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target_lang, temperature=0.3):
     """Get translations from AI model using direct API calls"""
-    logger.info(f"Sending request to {api_provider} API ({model}) with temperature {temperature}")
+    log_message(f"Sending request to {api_provider} API ({model}) with temperature {temperature}")
     import requests
     import json
     
@@ -667,11 +708,11 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             
             if response.status_code != 200:
                 error_message = f"Anthropic API Error: Status {response.status_code}, {response.text}"
-                logger.error(error_message)
+                log_message(error_message, level="error")
                 raise Exception(error_message)
             
             result = response.json()
-            logger.info("Received response from Anthropic API")
+            log_message("Received response from Anthropic API")
             return result["content"][0]["text"]
         
         else:  # OpenAI
@@ -708,31 +749,31 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             
             if response.status_code != 200:
                 error_message = f"OpenAI API Error: Status {response.status_code}, {response.text}"
-                logger.error(error_message)
+                log_message(error_message, level="error")
                 raise Exception(error_message)
             
             result = response.json()
-            logger.info("Received response from OpenAI API")
+            log_message("Received response from OpenAI API")
             return result["choices"][0]["message"]["content"]
     
     except requests.exceptions.RequestException as e:
         error_message = f"Network error: {str(e)}"
-        logger.error(error_message)
+        log_message(error_message, level="error")
         raise Exception(error_message)
     except json.JSONDecodeError as e:
         error_message = f"JSON parsing error: {str(e)}"
-        logger.error(error_message)
+        log_message(error_message, level="error")
         raise Exception(error_message)
     except Exception as e:
         error_message = f"API Error: {str(e)}"
-        logger.error(error_message)
+        log_message(error_message, level="error")
         raise Exception(error_message)
 
 # Function to parse AI response
 def parse_ai_response(ai_response, batch):
     """Parse AI response to extract translations"""
     try:
-        logger.info("Parsing AI response")
+        log_message("Parsing AI response")
         translations = {}
         lines = ai_response.split('\n')
         
@@ -773,19 +814,19 @@ def parse_ai_response(ai_response, batch):
                             break
             
             if not found:
-                logger.warning(f"Could not find translation for segment {segment_number} (ID: {segment['id']})")
+                log_message(f"Could not find translation for segment {segment_number} (ID: {segment['id']})", level="warning")
         
-        logger.info(f"Parsed {len(translations)} translations from AI response")
+        log_message(f"Parsed {len(translations)} translations from AI response")
         return translations
     except Exception as e:
-        logger.error(f"Error parsing AI response: {str(e)}")
+        log_message(f"Error parsing AI response: {str(e)}", level="error")
         return {}
 
 # Function to update XLIFF with translations
 def update_xliff_with_translations(xliff_content, translations):
     """Update XLIFF file with translations"""
     try:
-        logger.info(f"Updating XLIFF file with {len(translations)} translations")
+        log_message(f"Updating XLIFF file with {len(translations)} translations")
         # Register namespaces
         ET.register_namespace('mq', 'MQXliff')
         ET.register_namespace('', 'urn:oasis:names:tc:xliff:document:1.2')
@@ -839,17 +880,17 @@ def update_xliff_with_translations(xliff_content, translations):
         if not pretty_xml.startswith('<?xml version="1.0" encoding="UTF-8"?>'):
             pretty_xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml.split('\n', 1)[1]
         
-        logger.info(f"Successfully updated {updated_count} segments in XLIFF")
+        log_message(f"Successfully updated {updated_count} segments in XLIFF", level="success")
         return pretty_xml, updated_count
     except Exception as e:
-        logger.error(f"Error updating XLIFF: {str(e)}")
+        log_message(f"Error updating XLIFF: {str(e)}", level="error")
         return None, 0
 
 # Function to save translations as text file
 def save_translations_as_text(segments, translations, filename):
     """Save translations as a text file when XLIFF update fails"""
     try:
-        logger.info("Saving translations as text file")
+        log_message("Saving translations as text file")
         # Create output directory
         output_dir = os.path.join(os.getcwd(), 'translated')
         os.makedirs(output_dir, exist_ok=True)
@@ -878,17 +919,17 @@ def save_translations_as_text(segments, translations, filename):
         with open(text_path, 'w', encoding='utf-8') as f:
             f.write(text_output)
         
-        logger.info(f"Saved translations as text file: {text_path}")
+        log_message(f"Saved translations as text file: {text_path}")
         return text_path
     except Exception as e:
-        logger.error(f"Error saving translations as text: {str(e)}")
+        log_message(f"Error saving translations as text: {str(e)}", level="error")
         return None
 
 # Function to save XLIFF file
 def save_translated_xliff(xliff_content, filename):
     """Save translated XLIFF file"""
     try:
-        logger.info("Saving translated XLIFF file")
+        log_message("Saving translated XLIFF file")
         # Create output directory
         output_dir = os.path.join(os.getcwd(), 'translated')
         os.makedirs(output_dir, exist_ok=True)
@@ -906,10 +947,10 @@ def save_translated_xliff(xliff_content, filename):
             else:
                 f.write(xliff_content)
         
-        logger.info(f"Saved translated XLIFF file: {output_path}")
+        log_message(f"Saved translated XLIFF file: {output_path}", level="success")
         return output_path
     except Exception as e:
-        logger.error(f"Error saving translated XLIFF file: {str(e)}")
+        log_message(f"Error saving translated XLIFF file: {str(e)}", level="error")
         return None
 
 # Main application
@@ -1063,17 +1104,30 @@ def main():
         
         # Process log
         st.subheader("Process Log")
-        log_container = st.container(height=300)
+        log_container = st.container(height=400)  # Make this taller
         with log_container:
-            for log in st.session_state.logs:
-                if log['type'] == 'info':
-                    st.text(f"[{log['timestamp']}] {log['message']}")
-                elif log['type'] == 'error':
-                    st.error(log['message'])
-                elif log['type'] == 'warning':
-                    st.warning(log['message'])
-                elif log['type'] == 'success':
-                    st.success(log['message'])
+            if 'logs' in st.session_state and st.session_state.logs:
+                for log in st.session_state.logs:
+                    if log['type'] == 'info':
+                        st.text(f"[{log['timestamp']}] {log['message']}")
+                    elif log['type'] == 'error':
+                        st.error(f"[{log['timestamp']}] {log['message']}")
+                    elif log['type'] == 'warning':
+                        st.warning(f"[{log['timestamp']}] {log['message']}")
+                    elif log['type'] == 'success':
+                        st.success(f"[{log['timestamp']}] {log['message']}")
+            else:
+                st.info("No logs available yet.")
+        
+        # Add a complete log download option
+        if 'log_capture_string' in st.session_state:
+            full_log = st.session_state.log_capture_string.getvalue()
+            st.download_button(
+                label="Download Complete Log",
+                data=full_log,
+                file_name=f"detailed_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain"
+            )
         
         # Debug info
         if debug_mode:
@@ -1081,6 +1135,12 @@ def main():
             if st.session_state.xliff_content:
                 with st.expander("XLIFF Preview"):
                     st.code(st.session_state.xliff_content[:500])
+            
+            with st.expander("Raw Log Output (Complete)"):
+                if 'log_capture_string' in st.session_state:
+                    st.code(st.session_state.log_capture_string.getvalue())
+                else:
+                    st.info("No raw logs available.")
     
     # Tab 3: Results
     with tab3:
@@ -1133,19 +1193,19 @@ def main():
         # Validate inputs
         if not xliff_file:
             st.error("Please upload a MemoQ XLIFF file")
-            logger.error("MemoQ XLIFF file not uploaded")
+            log_message("MemoQ XLIFF file not uploaded", level="error")
             return
         if not tmx_file:
             st.error("Please upload a TMX file")
-            logger.error("TMX file not uploaded")
+            log_message("TMX file not uploaded", level="error")
             return
         if not csv_file:
             st.error("Please upload a terminology CSV file")
-            logger.error("Terminology CSV file not uploaded")
+            log_message("Terminology CSV file not uploaded", level="error")
             return
         if not api_key:
             st.error("Please enter an API key")
-            logger.error("API key not provided")
+            log_message("API key not provided", level="error")
             return
         
         # Set processing state
@@ -1156,18 +1216,18 @@ def main():
         st.session_state.progress = 0
         
         # Log processing start
-        logger.info("=" * 50)
-        logger.info(f"Starting translation process")
-        logger.info(f"Files: XLIFF={xliff_file.name}, TMX={tmx_file.name}, CSV={csv_file.name}")
-        logger.info(f"Settings: Provider={api_provider}, Model={model}, Batch Size={batch_size}, Match Threshold={match_threshold}%")
+        log_message("=" * 50)
+        log_message(f"Starting translation process")
+        log_message(f"Files: XLIFF={xliff_file.name}, TMX={tmx_file.name}, CSV={csv_file.name}")
+        log_message(f"Settings: Provider={api_provider}, Model={model}, Batch Size={batch_size}, Match Threshold={match_threshold}%")
         
         # Log language override settings
         if st.session_state.override_source_lang != "Auto-detect (from XLIFF)":
-            logger.info(f"Source language override: {st.session_state.override_source_lang}")
+            log_message(f"Source language override: {st.session_state.override_source_lang}")
         if st.session_state.override_target_lang != "Auto-detect (from XLIFF)":
-            logger.info(f"Target language override: {st.session_state.override_target_lang}")
+            log_message(f"Target language override: {st.session_state.override_target_lang}")
             
-        logger.info("=" * 50)
+        log_message("=" * 50)
         
         try:
             # Read files with better encoding handling
@@ -1178,13 +1238,6 @@ def main():
                 # Create backup of original file
                 backup_path = create_backup(xliff_file, xliff_file.name)
                 st.session_state.backup_path = backup_path
-                
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                st.session_state.logs.append({
-                    'message': f"Created backup of XLIFF file at: {backup_path}",
-                    'type': 'info',
-                    'timestamp': timestamp
-                })
                 
                 # Display backup information in sidebar
                 if backup_path:
@@ -1203,67 +1256,62 @@ def main():
                 # Try to decode with different encodings
                 try:
                     xliff_content = xliff_bytes.decode('utf-8')
-                    logger.info("Successfully decoded XLIFF file using UTF-8 encoding")
+                    log_message("Successfully decoded XLIFF file using UTF-8 encoding")
                 except UnicodeDecodeError:
-                    logger.warning("Failed to decode XLIFF with UTF-8, trying UTF-16")
+                    log_message("Failed to decode XLIFF with UTF-8, trying UTF-16", level="warning")
                     try:
                         xliff_content = xliff_bytes.decode('utf-16')
-                        logger.info("Successfully decoded XLIFF file using UTF-16 encoding")
+                        log_message("Successfully decoded XLIFF file using UTF-16 encoding")
                     except UnicodeDecodeError:
                         if xliff_bytes.startswith(b'\xff\xfe') or xliff_bytes.startswith(b'\xfe\xff'):
                             xliff_content = xliff_bytes.decode('utf-16')
-                            logger.info("Successfully decoded XLIFF file using UTF-16 with BOM")
+                            log_message("Successfully decoded XLIFF file using UTF-16 with BOM")
                         else:
                             xliff_content = xliff_bytes.decode('latin-1')
                             msg = "Could not determine the correct encoding for the XLIFF file. Using Latin-1 encoding as fallback."
-                            logger.warning(msg)
+                            log_message(msg, level="warning")
                             st.warning(msg)
                 
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                st.session_state.logs.append({
-                    'message': f"Successfully loaded XLIFF file",
-                    'type': 'info',
-                    'timestamp': timestamp
-                })
+                log_message(f"Successfully loaded XLIFF file")
                 
                 # Read TMX file with similar handling
                 tmx_bytes = tmx_file.read()
                 try:
                     tmx_content = tmx_bytes.decode('utf-8')
-                    logger.info("Successfully decoded TMX file using UTF-8 encoding")
+                    log_message("Successfully decoded TMX file using UTF-8 encoding")
                 except UnicodeDecodeError:
-                    logger.warning("Failed to decode TMX with UTF-8, trying UTF-16")
+                    log_message("Failed to decode TMX with UTF-8, trying UTF-16", level="warning")
                     try:
                         tmx_content = tmx_bytes.decode('utf-16')
-                        logger.info("Successfully decoded TMX file using UTF-16 encoding")
+                        log_message("Successfully decoded TMX file using UTF-16 encoding")
                     except UnicodeDecodeError:
                         if tmx_bytes.startswith(b'\xff\xfe') or tmx_bytes.startswith(b'\xfe\xff'):
                             tmx_content = tmx_bytes.decode('utf-16')
-                            logger.info("Successfully decoded TMX file using UTF-16 with BOM")
+                            log_message("Successfully decoded TMX file using UTF-16 with BOM")
                         else:
                             tmx_content = tmx_bytes.decode('latin-1')
                             msg = "Could not determine the correct encoding for the TMX file. Using Latin-1 encoding as fallback."
-                            logger.warning(msg)
+                            log_message(msg, level="warning")
                             st.warning(msg)
                 
                 # Read CSV file with similar handling
                 csv_bytes = csv_file.read()
                 try:
                     csv_content = csv_bytes.decode('utf-8')
-                    logger.info("Successfully decoded CSV file using UTF-8 encoding")
+                    log_message("Successfully decoded CSV file using UTF-8 encoding")
                 except UnicodeDecodeError:
-                    logger.warning("Failed to decode CSV with UTF-8, trying UTF-16")
+                    log_message("Failed to decode CSV with UTF-8, trying UTF-16", level="warning")
                     try:
                         csv_content = csv_bytes.decode('utf-16')
-                        logger.info("Successfully decoded CSV file using UTF-16 encoding")
+                        log_message("Successfully decoded CSV file using UTF-16 encoding")
                     except UnicodeDecodeError:
                         if csv_bytes.startswith(b'\xff\xfe') or csv_bytes.startswith(b'\xfe\xff'):
                             csv_content = csv_bytes.decode('utf-16')
-                            logger.info("Successfully decoded CSV file using UTF-16 with BOM")
+                            log_message("Successfully decoded CSV file using UTF-16 with BOM")
                         else:
                             csv_content = csv_bytes.decode('latin-1')
                             msg = "Could not determine the correct encoding for the CSV file. Using Latin-1 encoding as fallback."
-                            logger.warning(msg)
+                            log_message(msg, level="warning")
                             st.warning(msg)
                 
                 # Get prompt template
@@ -1278,22 +1326,16 @@ def main():
                                 prompt_template = prompt_bytes.decode('utf-16')
                             except UnicodeDecodeError:
                                 prompt_template = prompt_bytes.decode('latin-1')
-                        logger.info("Successfully loaded prompt template")
+                        log_message("Successfully loaded prompt template")
                     except Exception as prompt_error:
-                        logger.warning(f"Error reading prompt file: {str(prompt_error)}")
+                        log_message(f"Error reading prompt file: {str(prompt_error)}", level="warning")
                 
                 if custom_prompt_text:
                     prompt_template += "\n\n" + custom_prompt_text if prompt_template else custom_prompt_text
-                    logger.info("Added custom prompt text")
+                    log_message("Added custom prompt text")
             
             except Exception as file_error:
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                st.session_state.logs.append({
-                    'message': f"Error reading input files: {str(file_error)}",
-                    'type': 'error',
-                    'timestamp': timestamp
-                })
-                logger.error(f"Error reading input files: {str(file_error)}")
+                log_message(f"Error reading input files: {str(file_error)}", level="error")
                 st.session_state.processing_complete = True
                 return
             
@@ -1301,37 +1343,21 @@ def main():
             st.session_state.xliff_content = xliff_content
             
             # Add log
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-            st.session_state.logs.append({
-                'message': f"Starting translation process",
-                'type': 'info',
-                'timestamp': timestamp
-            })
+            log_message(f"Starting translation process")
             
             # Extract segments from XLIFF
             source_lang, target_lang, document_name, segments = extract_translatable_segments(xliff_content)
             
             if not segments:
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                st.session_state.logs.append({
-                    'message': "No translatable segments found in the XLIFF file",
-                    'type': 'error',
-                    'timestamp': timestamp
-                })
-                logger.error("No translatable segments found in the XLIFF file")
+                log_message("No translatable segments found in the XLIFF file", level="error")
                 st.session_state.processing_complete = True
                 return
             
             # Log language information
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
             source_lang_name = get_language_name(source_lang)
             target_lang_name = get_language_name(target_lang)
             
-            st.session_state.logs.append({
-                'message': f"Translation: {source_lang_name} ({source_lang}) -> {target_lang_name} ({target_lang})",
-                'type': 'info',
-                'timestamp': timestamp
-            })
+            log_message(f"Translation: {source_lang_name} ({source_lang}) -> {target_lang_name} ({target_lang})")
             
             # Prepare batches
             batches = []
@@ -1339,13 +1365,7 @@ def main():
                 batches.append(segments[i:i+batch_size])
             
             st.session_state.total_batches = len(batches)
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-            st.session_state.logs.append({
-                'message': f"Found {len(segments)} segments to translate in {len(batches)} batches",
-                'type': 'info',
-                'timestamp': timestamp
-            })
-            logger.info(f"Found {len(segments)} segments to translate in {len(batches)} batches")
+            log_message(f"Found {len(segments)} segments to translate in {len(batches)} batches")
             
             # Process batches
             all_translations = {}
@@ -1367,59 +1387,28 @@ def main():
                 batch_result = {'batch_index': batch_index}
                 
                 try:
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                     msg = f"Processing batch {batch_index + 1}/{len(batches)} ({len(batch)} segments)"
-                    st.session_state.logs.append({
-                        'message': msg,
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
-                    logger.info(msg)
+                    log_message(msg)
                     
                     # Find TM matches
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                     msg = f"Finding TM matches with threshold {match_threshold}%"
-                    st.session_state.logs.append({
-                        'message': msg,
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
+                    log_message(msg)
                     
                     tm_matches = extract_tm_matches(tmx_content, source_lang, target_lang, batch, match_threshold)
                     
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                     msg = f"Found {len(tm_matches)} TM matches above threshold"
-                    st.session_state.logs.append({
-                        'message': msg,
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
+                    log_message(msg)
                     
                     # Find terminology matches
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': "Identifying terminology matches",
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
+                    log_message("Identifying terminology matches")
                     
                     term_matches = extract_terminology(csv_content, batch)
                     
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                     msg = f"Found {len(term_matches)} relevant terminology entries"
-                    st.session_state.logs.append({
-                        'message': msg,
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
+                    log_message(msg)
                     
                     # Create prompt
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': "Creating prompt with custom text, TM matches and terminology",
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
+                    log_message("Creating prompt with custom text, TM matches and terminology")
                     
                     prompt = create_ai_prompt(
                         prompt_template, source_lang, target_lang, document_name, 
@@ -1427,13 +1416,8 @@ def main():
                     )
                     
                     # Get translations from AI
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                     msg = f"Sending request to {api_provider} API ({model})"
-                    st.session_state.logs.append({
-                        'message': msg,
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
+                    log_message(msg)
                     
                     ai_response = get_ai_translation(
                         api_provider, api_key, model, prompt, source_lang, target_lang, temperature
@@ -1441,26 +1425,16 @@ def main():
                     
                     if not ai_response:
                         error_msg = "Failed to get translation from API"
-                        logger.error(error_msg)
+                        log_message(error_msg, level="error")
                         raise Exception(error_msg)
                     
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': "Received translation response",
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
+                    log_message("Received translation response")
                     
                     # Parse AI response
                     translations = parse_ai_response(ai_response, batch)
                     
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                     msg = f"Parsed {len(translations)} translations from AI response"
-                    st.session_state.logs.append({
-                        'message': msg,
-                        'type': 'info',
-                        'timestamp': timestamp
-                    })
+                    log_message(msg)
                     
                     # Add to all translations
                     all_translations.update(translations)
@@ -1485,25 +1459,13 @@ def main():
                     
                 except Exception as e:
                     error_msg = f"Error processing batch {batch_index + 1}: {str(e)}"
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': error_msg,
-                        'type': 'error',
-                        'timestamp': timestamp
-                    })
-                    logger.error(error_msg)
+                    log_message(error_msg, level="error")
                     batch_result['error'] = str(e)
                     st.session_state.batch_results.append(batch_result)
             
             # Update XLIFF with translations
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
             msg = f"Updating XLIFF file with {len(all_translations)} translations"
-            st.session_state.logs.append({
-                'message': msg,
-                'type': 'info',
-                'timestamp': timestamp
-            })
-            logger.info(msg)
+            log_message(msg)
             
             # Try to update XLIFF
             try:
@@ -1518,21 +1480,11 @@ def main():
                 if not final_path:
                     raise Exception("Failed to save translated XLIFF file")
                 
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                 msg = f"Updated {updated_count} segments in the XLIFF file"
-                st.session_state.logs.append({
-                    'message': msg,
-                    'type': 'success',
-                    'timestamp': timestamp
-                })
+                log_message(msg, level="success")
                 
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
                 msg = f"Saved translated XLIFF to {os.path.basename(final_path)}"
-                st.session_state.logs.append({
-                    'message': msg,
-                    'type': 'success',
-                    'timestamp': timestamp
-                })
+                log_message(msg, level="success")
                 
                 # Store translated file path for download
                 st.session_state.translated_file_path = final_path
@@ -1540,61 +1492,38 @@ def main():
             except Exception as update_error:
                 # Log error
                 error_msg = f"Error updating or saving XLIFF: {str(update_error)}"
-                timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                st.session_state.logs.append({
-                    'message': error_msg,
-                    'type': 'error',
-                    'timestamp': timestamp
-                })
-                logger.error(error_msg)
+                log_message(error_msg, level="error")
                 
                 # Try to save as text file instead
                 text_path = save_translations_as_text(segments, all_translations, xliff_file.name)
                 
                 if text_path:
                     msg = f"Saved translations as text file instead: {os.path.basename(text_path)}"
-                    timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-                    st.session_state.logs.append({
-                        'message': msg,
-                        'type': 'warning',
-                        'timestamp': timestamp
-                    })
-                    logger.warning(msg)
+                    log_message(msg, level="warning")
                     
                     # Store text file path for download
                     st.session_state.translated_file_path = text_path
             
             # Log completion
-            logger.info("=" * 50)
-            logger.info(f"Translation process completed")
-            logger.info(f"Segments processed: {len(segments)}")
-            logger.info(f"Segments translated: {len(all_translations)}")
-            logger.info(f"Translated file: {st.session_state.translated_file_path}")
-            logger.info("=" * 50)
+            log_message("=" * 50)
+            log_message(f"Translation process completed")
+            log_message(f"Segments processed: {len(segments)}")
+            log_message(f"Segments translated: {len(all_translations)}")
+            log_message(f"Translated file: {st.session_state.translated_file_path}")
+            log_message("=" * 50)
             
             # Mark processing as complete
             st.session_state.processing_complete = True
             st.session_state.progress = 1.0
             
             # Show completion message
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-            st.session_state.logs.append({
-                'message': "Translation process completed successfully",
-                'type': 'success',
-                'timestamp': timestamp
-            })
+            log_message("Translation process completed successfully", level="success")
             
             # Refresh UI
             st.rerun()
             
         except Exception as e:
-            timestamp = pd.Timestamp.now().strftime('%H:%M:%S')
-            st.session_state.logs.append({
-                'message': f"Error: {str(e)}",
-                'type': 'error',
-                'timestamp': timestamp
-            })
-            logger.error(f"Error: {str(e)}")
+            log_message(f"Error: {str(e)}", level="error")
             st.session_state.processing_complete = True
             st.rerun()
 
