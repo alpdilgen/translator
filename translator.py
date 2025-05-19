@@ -783,9 +783,9 @@ def main():
     st.session_state.max_context_batches = max_context_batches
             
             # Persist slider values using session_state.get
-            val_batch_size = st.session_state.get('slider_batch_size', 10)
-            val_match_threshold = st.session_state.get('slider_match_threshold', 75)
-            val_temperature = st.session_state.get('slider_temperature', 0.0)
+    val_batch_size = st.session_state.get('slider_batch_size', 10)
+    val_match_threshold = st.session_state.get('slider_match_threshold', 75)
+    val_temperature = st.session_state.get('slider_temperature', 0.0)
             
             st.session_state.slider_batch_size = st.slider("Batch Size", 5, 50, val_batch_size, key="main_batch_size_slider")
             st.session_state.slider_match_threshold = st.slider("TM Match Threshold (%)", 60, 100, val_match_threshold, key="main_match_thresh_slider")
