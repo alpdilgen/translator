@@ -410,7 +410,7 @@ def get_language_options():
 
 # Function to create AI prompt
 def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, batch, 
-                    tm_matches, term_matches, translation_context=None):
+                     tm_matches, term_matches, translation_context=None):
     """Create a prompt for the AI model, now with translation context"""
     try:
         batch_idx_log = st.session_state.get('current_batch', 0)
@@ -429,7 +429,7 @@ def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, b
                 prompt += context_examples
                 context_stats = translation_context.get_stats()
                 log_message(f"Added context from {context_stats['batches']} previous batches "
-                          f"({context_stats['segments']} segments)")
+                            f"({context_stats['segments']} segments)")
 
         if tm_matches:
             prompt += "TRANSLATION MEMORY EXAMPLES:\n"
@@ -643,7 +643,7 @@ def update_xliff_with_translations(xliff_data_str, translations_dict): # Renamed
         if pretty_xml_str.startswith('<?xml version="1.0" ?>'):
             pretty_xml_str = pretty_xml_str.replace('<?xml version="1.0" ?>', '<?xml version="1.0" encoding="UTF-8"?>', 1)
         elif 'encoding="UTF-8"' not in pretty_xml_str.splitlines()[0]:
-             pretty_xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml_str.split('\n',1)[1]
+                 pretty_xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml_str.split('\n',1)[1]
 
 
         log_message(f"Successfully updated {updated_segment_count} segments in XLIFF", level="success")
@@ -713,9 +713,9 @@ def main():
             with open(log_filepath, 'r', encoding='utf-8') as log_file_reader: # Added encoding
                 log_content_download = log_file_reader.read() # Renamed
                 st.sidebar.download_button(label="Download Log File", data=log_content_download,
-                                           file_name=os.path.basename(log_filepath), mime="text/plain")
+                                            file_name=os.path.basename(log_filepath), mime="text/plain")
         except Exception as e_log_read_main: # Renamed
-             st.sidebar.error(f"Error reading log for download: {str(e_log_read_main)}")
+                 st.sidebar.error(f"Error reading log for download: {str(e_log_read_main)}")
     else:
         st.sidebar.warning("Log file not available or path is incorrect.")
 
@@ -769,29 +769,29 @@ def main():
 
     # Add context settings
     context_enabled = st.checkbox("Enable Context Between Batches", 
-                                value=st.session_state.get('context_enabled', True),
-                                help="Use previous batch translations as context for future batches")
+                                   value=st.session_state.get('context_enabled', True),
+                                   help="Use previous batch translations as context for future batches")
     
     if context_enabled:
         max_context_batches = st.slider("Max Context Batches", 
-                                      min_value=1, max_value=5, value=st.session_state.get('max_context_batches', 3),
-                                      help="Maximum number of previous batches to keep as context")
+                                        min_value=1, max_value=5, value=st.session_state.get('max_context_batches', 3),
+                                        help="Maximum number of previous batches to keep as context")
     else:
         max_context_batches = 0
         
     st.session_state.context_enabled = context_enabled
     st.session_state.max_context_batches = max_context_batches
-            
+                
             # Persist slider values using session_state.get
-    val_batch_size = st.session_state.get('slider_batch_size', 10)
-    val_match_threshold = st.session_state.get('slider_match_threshold', 75)
-    val_temperature = st.session_state.get('slider_temperature', 0.0)
+            val_batch_size = st.session_state.get('slider_batch_size', 10)
+            val_match_threshold = st.session_state.get('slider_match_threshold', 75)
+            val_temperature = st.session_state.get('slider_temperature', 0.0)
             
-    st.session_state.slider_batch_size = st.slider("Batch Size", 5, 50, val_batch_size, key="main_batch_size_slider")
-    st.session_state.slider_match_threshold = st.slider("TM Match Threshold (%)", 60, 100, val_match_threshold, key="main_match_thresh_slider")
-    st.session_state.slider_temperature = st.slider("AI Temperature", 0.0, 1.0, val_temperature, step=0.1, key="main_temp_slider")
+            st.session_state.slider_batch_size = st.slider("Batch Size", 5, 50, val_batch_size, key="main_batch_size_slider")
+            st.session_state.slider_match_threshold = st.slider("TM Match Threshold (%)", 60, 100, val_match_threshold, key="main_match_thresh_slider")
+            st.session_state.slider_temperature = st.slider("AI Temperature", 0.0, 1.0, val_temperature, step=0.1, key="main_temp_slider")
             
-    st.session_state.custom_prompt_input = st.text_area("Additional prompt instructions (optional)", st.session_state.get('custom_prompt_input', ""), height=100, key="main_custom_prompt_area") # Renamed
+            st.session_state.custom_prompt_input = st.text_area("Additional prompt instructions (optional)", st.session_state.get('custom_prompt_input', ""), height=100, key="main_custom_prompt_area") # Renamed
 
             if st.button("Start Processing", disabled=st.session_state.processing_started, key="main_start_button"):
                 if not uploaded_xliff: st.error("Please upload a MemoQ XLIFF file"); log_message("XLIFF missing", "error")
@@ -896,8 +896,8 @@ def main():
                     if k_reset in st.session_state: del st.session_state[k_reset]
                 # Re-initialize to defaults
                 for key_state, val_state in default_session_states.items(): # Renamed variables
-                     if key_state not in ['override_source_lang', 'override_target_lang', 'debug_mode']: # Persist these
-                        st.session_state[key_state] = val_state
+                         if key_state not in ['override_source_lang', 'override_target_lang', 'debug_mode']: # Persist these
+                            st.session_state[key_state] = val_state
                 st.rerun()
 
     # --- Main Processing Logic (after rerun from "Start Processing") ---
@@ -949,17 +949,17 @@ def main():
 
 
 # Initialize context cache if enabled (ADD THIS HERE)
-        if st.session_state.get('context_enabled', True):
-            st.session_state.translation_context = TranslationContextCache(
-                max_batches=st.session_state.get('max_context_batches', 3)
-            )
-            log_message(f"Initialized translation context cache with max {st.session_state.get('max_context_batches', 3)} batches")
-        else:
-            st.session_state.translation_context = None
-            log_message("Translation context caching is disabled")
+            if st.session_state.get('context_enabled', True):
+                st.session_state.translation_context = TranslationContextCache(
+                    max_batches=st.session_state.get('max_context_batches', 3)
+                )
+                log_message(f"Initialized translation context cache with max {st.session_state.get('max_context_batches', 3)} batches")
+            else:
+                st.session_state.translation_context = None
+                log_message("Translation context caching is disabled")
 
-        # Extract Segments (existing code continues here)
-        src_lang_main, trg_lang_main, doc_name_main, segments_list_main = extract_translatable_segments(xliff_str_content)
+    # Extract Segments (existing code continues here)
+            src_lang_main, trg_lang_main, doc_name_main, segments_list_main = extract_translatable_segments(xliff_str_content)
 
             # Extract Segments
             src_lang_main, trg_lang_main, doc_name_main, segments_list_main = extract_translatable_segments(xliff_str_content)
@@ -1004,16 +1004,16 @@ def main():
                     current_batch_result['translations_received'] = len(parsed_translations_batch)
 
 # Add this batch to the context cache for future batches
-                if st.session_state.get('translation_context') and parsed_translations_batch:
-                    st.session_state.translation_context.add_batch(
-                        i, current_batch_list, parsed_translations_batch
-                    )
-                    log_message(f"Added batch {i+1} translations to context cache")
+                    if st.session_state.get('translation_context') and parsed_translations_batch:
+                        st.session_state.translation_context.add_batch(
+                            i, current_batch_list, parsed_translations_batch
+                        )
+                        log_message(f"Added batch {i+1} translations to context cache")
                 
-                log_message(f"Batch {st.session_state.current_batch} finished. Received {len(parsed_translations_batch)} translations.")
+                    log_message(f"Batch {st.session_state.current_batch} finished. Received {len(parsed_translations_batch)} translations.")
                 except Exception as e_batch_proc: # Renamed
                     log_message(f"Error in Batch {st.session_state.current_batch} processing: {str(e_batch_proc)}", "error")
-                    current_batch_result['error'] = str(e_batch_proc)                
+                    current_batch_result['error'] = str(e_batch_proc)                       
                 st.session_state.batch_results.append(current_batch_result)
                 st.session_state.progress = (i + 1) / st.session_state.total_batches
                 # Consider a very short sleep or removing it if UI updates are handled by Streamlit's natural flow
