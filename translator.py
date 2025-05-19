@@ -66,16 +66,21 @@ def log_message(message, level="info"):
         logger.error(message)
     elif level == "success":
         logger.info(f"SUCCESS: {message}")
+    elif level == "debug":
+        if hasattr(st.session_state, 'debug_mode') and st.session_state.debug_mode:
+            logger.debug(message)
     
     # Also add to session state logs for UI display
     if 'logs' not in st.session_state:
         st.session_state.logs = []
     
-    st.session_state.logs.append({
-        'message': message,
-        'type': level,
-        'timestamp': timestamp
-    })
+    # Only add non-debug messages to UI logs, or debug messages if in debug mode
+    if level != "debug" or (hasattr(st.session_state, 'debug_mode') and st.session_state.debug_mode):
+        st.session_state.logs.append({
+            'message': message,
+            'type': level,
+            'timestamp': timestamp
+        })
 
 # Configure streamlit page
 st.set_page_config(
@@ -435,6 +440,7 @@ def extract_terminology(csv_content, source_segments):
     """Extract terminology matches from CSV file"""
     try:
         log_message("Extracting terminology matches")
+        # Use io.StringIO instead of pd.StringIO (which doesn't exist)
         df = pd.read_csv(io.StringIO(csv_content))
         
         if len(df.columns) < 2:
@@ -663,6 +669,26 @@ def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, b
             prompt += f"[{i+1}] {segment['source']}\n"
         
         log_message(f"Created prompt with {len(batch)} segments")
+        
+        # Save the full prompt to a file
+        prompt_dir = os.path.join(os.getcwd(), 'prompts')
+        os.makedirs(prompt_dir, exist_ok=True)
+        batch_index = st.session_state.current_batch if hasattr(st.session_state, 'current_batch') else 0
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        prompt_filename = f"prompt_batch_{batch_index}_{timestamp}.txt"
+        prompt_path = os.path.join(prompt_dir, prompt_filename)
+        
+        with open(prompt_path, 'w', encoding='utf-8') as f:
+            f.write(prompt)
+        
+        log_message(f"Saved full prompt to {prompt_path}")
+        
+        # For debug mode, also log the prompt content
+        if hasattr(st.session_state, 'debug_mode') and st.session_state.debug_mode:
+            log_message("=== FULL PROMPT START ===", level="debug")
+            log_message(prompt, level="debug")
+            log_message("=== FULL PROMPT END ===", level="debug")
+            
         return prompt
     except Exception as e:
         log_message(f"Error creating prompt: {str(e)}", level="error")
@@ -713,6 +739,20 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             
             result = response.json()
             log_message("Received response from Anthropic API")
+            
+            # Save the response to a file
+            response_dir = os.path.join(os.getcwd(), 'responses')
+            os.makedirs(response_dir, exist_ok=True)
+            batch_index = st.session_state.current_batch if hasattr(st.session_state, 'current_batch') else 0
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            response_filename = f"response_batch_{batch_index}_{timestamp}.txt"
+            response_path = os.path.join(response_dir, response_filename)
+            
+            with open(response_path, 'w', encoding='utf-8') as f:
+                f.write(result["content"][0]["text"])
+            
+            log_message(f"Saved AI response to {response_path}")
+            
             return result["content"][0]["text"]
         
         else:  # OpenAI
@@ -754,6 +794,20 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             
             result = response.json()
             log_message("Received response from OpenAI API")
+            
+            # Save the response to a file
+            response_dir = os.path.join(os.getcwd(), 'responses')
+            os.makedirs(response_dir, exist_ok=True)
+            batch_index = st.session_state.current_batch if hasattr(st.session_state, 'current_batch') else 0
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            response_filename = f"response_batch_{batch_index}_{timestamp}.txt"
+            response_path = os.path.join(response_dir, response_filename)
+            
+            with open(response_path, 'w', encoding='utf-8') as f:
+                f.write(result["choices"][0]["message"]["content"])
+            
+            log_message(f"Saved AI response to {response_path}")
+            
             return result["choices"][0]["message"]["content"]
     
     except requests.exceptions.RequestException as e:
@@ -957,7 +1011,7 @@ def save_translated_xliff(xliff_content, filename):
 def main():
     # Display log file information
     st.sidebar.title("Log Information")
-    if 'log_filepath' in locals():
+    if 'log_filepath' in globals():
         st.sidebar.info(f"Log file: {os.path.basename(log_filepath)}")
         st.sidebar.info(f"Location: {log_dir}")
         
@@ -977,6 +1031,7 @@ def main():
     
     # Debug toggle
     debug_mode = st.sidebar.checkbox("Debug Mode", value=False)
+    st.session_state.debug_mode = debug_mode
     
     # Initialize session state
     if 'processing_started' not in st.session_state:
@@ -1066,7 +1121,7 @@ def main():
                                        help="Minimum similarity percentage for TM matches")
             
             temperature = st.slider("AI Temperature", 
-                                  min_value=0.0, max_value=1.0, value=0.3, step=0.1,
+                                  min_value=0.0, max_value=1.0, value=0.0, step=0.1,
                                   help="Controls randomness in translation (0.0 = more deterministic, 1.0 = more creative)")
             
             custom_prompt_text = st.text_area("Additional prompt instructions (optional)", 
@@ -1116,6 +1171,8 @@ def main():
                         st.warning(f"[{log['timestamp']}] {log['message']}")
                     elif log['type'] == 'success':
                         st.success(f"[{log['timestamp']}] {log['message']}")
+                    elif log['type'] == 'debug' and debug_mode:
+                        st.info(f"[DEBUG] [{log['timestamp']}] {log['message']}")
             else:
                 st.info("No logs available yet.")
         
@@ -1132,6 +1189,7 @@ def main():
         # Debug info
         if debug_mode:
             st.subheader("Debug Information")
+            
             if st.session_state.xliff_content:
                 with st.expander("XLIFF Preview"):
                     st.code(st.session_state.xliff_content[:500])
@@ -1141,6 +1199,36 @@ def main():
                     st.code(st.session_state.log_capture_string.getvalue())
                 else:
                     st.info("No raw logs available.")
+            
+            # Add prompt viewer
+            prompt_dir = os.path.join(os.getcwd(), 'prompts')
+            if os.path.exists(prompt_dir):
+                prompt_files = [f for f in os.listdir(prompt_dir) if f.endswith('.txt')]
+                if prompt_files:
+                    with st.expander("View Prompts"):
+                        selected_prompt = st.selectbox("Select prompt file to view", prompt_files)
+                        prompt_path = os.path.join(prompt_dir, selected_prompt)
+                        try:
+                            with open(prompt_path, 'r', encoding='utf-8') as f:
+                                prompt_content = f.read()
+                            st.code(prompt_content)
+                        except Exception as e:
+                            st.error(f"Error reading prompt file: {str(e)}")
+            
+            # Add response viewer
+            response_dir = os.path.join(os.getcwd(), 'responses')
+            if os.path.exists(response_dir):
+                response_files = [f for f in os.listdir(response_dir) if f.endswith('.txt')]
+                if response_files:
+                    with st.expander("View AI Responses"):
+                        selected_response = st.selectbox("Select response file to view", response_files)
+                        response_path = os.path.join(response_dir, selected_response)
+                        try:
+                            with open(response_path, 'r', encoding='utf-8') as f:
+                                response_content = f.read()
+                            st.code(response_content)
+                        except Exception as e:
+                            st.error(f"Error reading response file: {str(e)}")
     
     # Tab 3: Results
     with tab3:
@@ -1391,34 +1479,20 @@ def main():
                     log_message(msg)
                     
                     # Find TM matches
-                    msg = f"Finding TM matches with threshold {match_threshold}%"
-                    log_message(msg)
-                    
                     tm_matches = extract_tm_matches(tmx_content, source_lang, target_lang, batch, match_threshold)
-                    
-                    msg = f"Found {len(tm_matches)} TM matches above threshold"
-                    log_message(msg)
                     
                     # Find terminology matches
                     log_message("Identifying terminology matches")
-                    
                     term_matches = extract_terminology(csv_content, batch)
-                    
-                    msg = f"Found {len(term_matches)} relevant terminology entries"
-                    log_message(msg)
+                    log_message(f"Found {len(term_matches)} relevant terminology entries")
                     
                     # Create prompt
-                    log_message("Creating prompt with custom text, TM matches and terminology")
-                    
                     prompt = create_ai_prompt(
                         prompt_template, source_lang, target_lang, document_name, 
                         batch, tm_matches, term_matches
                     )
                     
                     # Get translations from AI
-                    msg = f"Sending request to {api_provider} API ({model})"
-                    log_message(msg)
-                    
                     ai_response = get_ai_translation(
                         api_provider, api_key, model, prompt, source_lang, target_lang, temperature
                     )
@@ -1432,9 +1506,6 @@ def main():
                     
                     # Parse AI response
                     translations = parse_ai_response(ai_response, batch)
-                    
-                    msg = f"Parsed {len(translations)} translations from AI response"
-                    log_message(msg)
                     
                     # Add to all translations
                     all_translations.update(translations)
@@ -1463,9 +1534,8 @@ def main():
                     batch_result['error'] = str(e)
                     st.session_state.batch_results.append(batch_result)
             
-# Update XLIFF with translations
-            msg = f"Updating XLIFF file with {len(all_translations)} translations"
-            log_message(msg)
+            # Update XLIFF with translations
+            log_message(f"Updating XLIFF file with {len(all_translations)} translations")
             
             # Try to update XLIFF
             try:
@@ -1480,29 +1550,11 @@ def main():
                 if not final_path:
                     raise Exception("Failed to save translated XLIFF file")
                 
-                msg = f"Updated {updated_count} segments in the XLIFF file"
-                log_message(msg, level="success")
-                
-                msg = f"Saved translated XLIFF to {os.path.basename(final_path)}"
-                log_message(msg, level="success")
+                log_message(f"Updated {updated_count} segments in the XLIFF file", level="success")
+                log_message(f"Saved translated XLIFF to {os.path.basename(final_path)}", level="success")
                 
                 # Store translated file path for download
                 st.session_state.translated_file_path = final_path
-                
-            except Exception as update_error:
-                # Log error
-                error_msg = f"Error updating or saving XLIFF: {str(update_error)}"
-                log_message(error_msg, level="error")
-                
-                # Try to save as text file instead
-                text_path = save_translations_as_text(segments, all_translations, xliff_file.name)
-                
-                if text_path:
-                    msg = f"Saved translations as text file instead: {os.path.basename(text_path)}"
-                    log_message(msg, level="warning")
-                    
-                    # Store text file path for download
-                    st.session_state.translated_file_path = text_path
                 
             except Exception as update_error:
                 # Log error
