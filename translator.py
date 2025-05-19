@@ -805,7 +805,7 @@ def main():
                     st.session_state.progress = 0.0
                     st.session_state.current_batch = 0 # Reset batch counter for the run
 
-                    # Store file contents and settings in session_state for use after rerun
+# Store file contents and settings in session_state for use after rerun
                     st.session_state.run_config = {
                         'xliff_name': uploaded_xliff.name,
                         'xliff_bytes': uploaded_xliff.getvalue(),
@@ -822,46 +822,57 @@ def main():
                         'match_threshold': st.session_state.slider_match_threshold,
                         'temperature': st.session_state.slider_temperature,
                         'override_source_lang': st.session_state.override_source_lang,
-                        'override_target_lang': st.session_state.override_target_lang
+                        'override_target_lang': st.session_state.override_target_lang,
+                        'context_enabled': context_enabled,
+                        'max_context_batches': max_context_batches
                     }
-                    log_message("=" * 50); log_message(f"Starting translation for: {uploaded_xliff.name}"); log_message("=" * 50)
-                    st.rerun() # Trigger rerun to enter processing block
+                    log_message("=" * 50)
+                    log_message(f"Starting translation for: {uploaded_xliff.name}")
+                    log_message("=" * 50)
+                    st.rerun()  # Trigger rerun to enter processing block
 
+        # Progress bar in tab1
         if st.session_state.processing_started and not st.session_state.processing_complete:
             st.subheader("Progress")
-            prog_bar_val = float(st.session_state.progress) # Renamed
+            prog_bar_val = float(st.session_state.progress)
             st.progress(prog_bar_val)
-            status_text_ui = st.empty() # Renamed
+            status_text_ui = st.empty()
             if st.session_state.total_batches > 0:
                 status_text_ui.text(f"Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(prog_bar_val * 100)}%)")
-            else: status_text_ui.text("Preparing...")
+            else:
+                status_text_ui.text("Preparing...")
     
-    with tab2: # Processing Tab
+    with tab2:  # Processing Tab
         st.subheader("Processing Status & Log")
         if st.session_state.processing_started and not st.session_state.processing_complete:
-            prog_bar_val_tab2 = float(st.session_state.progress) # Renamed
+            prog_bar_val_tab2 = float(st.session_state.progress)
             st.progress(prog_bar_val_tab2)
-            status_text_ui_tab2 = st.empty() # Renamed
-            if st.session_state.total_batches > 0: status_text_ui_tab2.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
-            else: status_text_ui_tab2.text("Preparing batches...")
+            status_text_ui_tab2 = st.empty()
+            if st.session_state.total_batches > 0:
+                status_text_ui_tab2.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
+            else:
+                status_text_ui_tab2.text("Preparing batches...")
             st.info("Processing... See detailed logs below. This may take time.")
         elif st.session_state.processing_complete:
             st.success("Processing complete. View results in the 'Results' tab.")
 
-        log_display_container = st.container(height=400) # Renamed
+        log_display_container = st.container(height=400)
         with log_display_container:
             if st.session_state.logs:
-                for entry in st.session_state.logs: # Renamed
+                for entry in st.session_state.logs:
                     color_map = {'info': 'blue', 'error': 'red', 'warning': 'orange', 'success': 'green', 'debug': 'grey'}
                     log_color = color_map.get(entry['type'], 'black')
                     if entry['type'] != 'debug' or st.session_state.debug_mode:
                         st.markdown(f"<span style='color:{log_color};'>[{entry['timestamp']}] {entry['message']}</span>", unsafe_allow_html=True)
-            else: st.info("Logs will appear here once processing starts.")
+            else:
+                st.info("Logs will appear here once processing starts.")
         
-        if 'log_capture_string' in st.session_state: # For full in-memory log
-            st.download_button("Download Full Session Log", st.session_state.log_capture_string.getvalue(), 
-                               f"full_session_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", "text/plain", 
-                               key="download_full_log_tab2")
+        if 'log_capture_string' in st.session_state:  # For full in-memory log
+            st.download_button("Download Full Session Log", 
+                              st.session_state.log_capture_string.getvalue(), 
+                              f"full_session_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", 
+                              "text/plain", 
+                              key="download_full_log_tab2")
         # Debug info (simplified)
         if st.session_state.debug_mode and st.session_state.get('xliff_content_main_run'):
             with st.expander("XLIFF Content (First 500 Chars)"): st.code(st.session_state.xliff_content_main_run[:500])
