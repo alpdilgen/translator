@@ -1479,8 +1479,7 @@ def main():
                 
                 if not final_path:
                     raise Exception("Failed to save translated XLIFF file")
-                
-		msg = f"Updated {updated_count} segments in the XLIFF file"
+msg = f"Updated {updated_count} segments in the XLIFF file"
                 log_message(msg, level="success")
                 
                 msg = f"Saved translated XLIFF to {os.path.basename(final_path)}"
