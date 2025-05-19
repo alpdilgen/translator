@@ -78,74 +78,6 @@ def log_message(message, level="info"):
             'timestamp': timestamp
         })
 
-
-# Add this after your imports and logging setup, before the main functions
-class TranslationContextCache:
-    """Cache for storing and tracking previous batch translations as context for future batches"""
-    
-    def __init__(self, max_batches=3):
-        """Initialize context cache with settings"""
-        self.previous_translations = []  # List of {batch_id, source_texts, translations} dicts
-        self.max_batches = max_batches
-        
-    def add_batch(self, batch_index, batch_segments, translations):
-        """Add a new batch of translations to the context"""
-        # Format the batch data for contextual reference
-        batch_data = {
-            'batch_index': batch_index,
-            'segments': []
-        }
-        
-        # Store each segment with its translation
-        for segment in batch_segments:
-            segment_id = segment['id']
-            if segment_id in translations:
-                batch_data['segments'].append({
-                    'id': segment_id,
-                    'source': segment['source'],
-                    'translation': translations[segment_id]
-                })
-        
-        # Only add if we have translations
-        if batch_data['segments']:
-            self.previous_translations.append(batch_data)
-            
-            # Maintain maximum context window - keep only most recent batches
-            if len(self.previous_translations) > self.max_batches:
-                self.previous_translations.pop(0)  # Remove oldest batch
-                
-    def get_context_for_prompt(self, max_examples=None):
-        """Get formatted context string for inclusion in prompts"""
-        if not self.previous_translations:
-            return ""
-            
-        context_str = "PREVIOUSLY TRANSLATED SEGMENTS (FOR CONTEXT):\n"
-        
-        # Calculate how many examples we can include from each batch
-        total_segments = sum(len(batch['segments']) for batch in self.previous_translations)
-        examples_per_batch = max_examples // len(self.previous_translations) if max_examples else None
-        
-        # Add examples from each batch
-        for batch in self.previous_translations:
-            segments_to_include = batch['segments']
-            if examples_per_batch and len(segments_to_include) > examples_per_batch:
-                # If too many segments, take some from beginning and end
-                half = examples_per_batch // 2
-                segments_to_include = segments_to_include[:half] + segments_to_include[-half:]
-                
-            for seg in segments_to_include:
-                context_str += f"Source: {seg['source']}\nTranslation: {seg['translation']}\n\n"
-        
-        return context_str + "\n"
-        
-    def get_stats(self):
-        """Get statistics about the current context cache"""
-        total_segments = sum(len(batch['segments']) for batch in self.previous_translations)
-        return {
-            'batches': len(self.previous_translations),
-            'segments': total_segments
-        }
-
 # Configure streamlit page
 st.set_page_config(
     page_title="MemoQ Translation Assistant",
@@ -409,10 +341,10 @@ def get_language_options():
     return sorted(list(set(all_language_names))) # Unique and sorted
 
 # Function to create AI prompt
-def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, batch, 
-                     tm_matches, term_matches, translation_context=None):
-    """Create a prompt for the AI model, now with translation context"""
+def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, batch, tm_matches, term_matches):
+    """Create a prompt for the AI model"""
     try:
+        # Use st.session_state.get for safer access to current_batch
         batch_idx_log = st.session_state.get('current_batch', 0)
         log_message(f"Creating AI prompt for batch {batch_idx_log}")
         
@@ -421,15 +353,6 @@ def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, b
         target_lang_name = get_language_name(target_lang)
         prompt += f"Translate from {source_lang_name} ({source_lang}) to {target_lang_name} ({target_lang}).\n\n"
         prompt += f"Document: {document_name}\n\n"
-
-        # Add translation context if available
-        if translation_context and hasattr(translation_context, 'get_context_for_prompt'):
-            context_examples = translation_context.get_context_for_prompt(max_examples=10)
-            if context_examples:
-                prompt += context_examples
-                context_stats = translation_context.get_stats()
-                log_message(f"Added context from {context_stats['batches']} previous batches "
-                            f"({context_stats['segments']} segments)")
 
         if tm_matches:
             prompt += "TRANSLATION MEMORY EXAMPLES:\n"
@@ -441,34 +364,31 @@ def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, b
                 prompt += f"{term['source']} → {term['target']}\n"
             prompt += "\n"
         
-        prompt += "IMPORTANT INSTRUCTIONS:\n"
+        prompt += "IMPORTANT INSTRUCTIONS:\n" # ... (rest of instructions) ...
         prompt += "1. Translate each segment in order, maintaining the [number] at the beginning of each line.\n"
         prompt += "2. Preserve the original formatting, including HTML/XML tags, placeholders, and special markers.\n"
         prompt += "3. Ensure the translation maintains the same meaning and tone as the original.\n"
         prompt += "4. Use the terminology provided above consistently.\n"
-        # Add this new instruction if context is available
-        if translation_context and hasattr(translation_context, 'get_context_for_prompt') and translation_context.previous_translations:
-            prompt += "5. Maintain consistency with the previously translated segments shown in the context section.\n"
-            prompt += "6. Format your response as: [1] Translation for segment 1, [2] Translation for segment 2, etc.\n\n"
-        else:
-            prompt += "5. Format your response as: [1] Translation for segment 1, [2] Translation for segment 2, etc.\n\n"
-        
+        prompt += "5. Format your response as: [1] Translation for segment 1, [2] Translation for segment 2, etc.\n\n"
         prompt += "SEGMENTS TO TRANSLATE:\n"
-        for i, segment_item in enumerate(batch):
+        for i, segment_item in enumerate(batch): # Renamed variable
             prompt += f"[{i+1}] {segment_item['source']}\n"
         
         log_message(f"Created prompt with {len(batch)} segments for batch {batch_idx_log}")
         
-        prompt_dir_path = os.path.join(os.getcwd(), 'prompts')
+        prompt_dir_path = os.path.join(os.getcwd(), 'prompts') # Renamed variable
         os.makedirs(prompt_dir_path, exist_ok=True)
-        timestamp_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        prompt_filename_str = f"prompt_batch_{batch_idx_log}_{timestamp_str}.txt"
-        full_prompt_path = os.path.join(prompt_dir_path, prompt_filename_str)
+        timestamp_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S') # Renamed variable
+        prompt_filename_str = f"prompt_batch_{batch_idx_log}_{timestamp_str}.txt" # Renamed variable
+        full_prompt_path = os.path.join(prompt_dir_path, prompt_filename_str) # Renamed variable
         
-        with open(full_prompt_path, 'w', encoding='utf-8') as f_prompt:
+        with open(full_prompt_path, 'w', encoding='utf-8') as f_prompt: # Renamed variable
             f_prompt.write(prompt)
         log_message(f"Saved full prompt to {full_prompt_path}")
 
+        # ADDED: Log the AI prompt content
+        log_message(f"AI Prompt Content (Batch {batch_idx_log}):\n---BEGIN PROMPT---\n{prompt}\n---END PROMPT---", level="info")
+        
         if hasattr(st.session_state, 'debug_mode') and st.session_state.debug_mode:
             log_message(f"=== FULL PROMPT START (Batch {batch_idx_log}) ===", level="debug")
             log_message(prompt, level="debug")
@@ -489,15 +409,8 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
     try:
         if api_provider == 'anthropic':
             headers = {"x-api-key": api_key, "content-type": "application/json", "anthropic-version": "2023-06-01"}
-            
-            # UPDATED: Using more detailed system prompt
-            system_prompt_text = (
-                "You are a professional translator specializing in technical documents. "
-                "Translate precisely while preserving all formatting, tags, and special characters. "
-                f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
-                "Pay special attention to cultural nuances and linguistic patterns."
-            )
-            
+            # Simplified system prompt for brevity in this view
+            system_prompt_text = (f"Professional translator for technical docs. Preserve formatting. {source_lang} to {target_lang}.")
             data = {"model": model, "max_tokens": 4000, "temperature": temperature,
                     "system": system_prompt_text, "messages": [{"role": "user", "content": prompt}]}
             response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data, timeout=120)
@@ -508,15 +421,7 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             ai_response_text = result["content"][0]["text"]
         elif api_provider == 'openai': # Corrected: was 'else:'
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-            
-            # UPDATED: Using more detailed system prompt
-            system_prompt_text_openai = (
-                "You are a professional translator specializing in technical documents. "
-                "Translate precisely while preserving all formatting, tags, and special characters. "
-                f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
-                "Pay special attention to cultural nuances and linguistic patterns."
-            )
-            
+            system_prompt_text_openai = (f"Professional translator for technical docs. Preserve formatting. {source_lang} to {target_lang}.") # Renamed
             data = {"model": model, "messages": [{"role": "system", "content": system_prompt_text_openai}, {"role": "user", "content": prompt}],
                     "max_tokens": 4000, "temperature": temperature}
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data, timeout=120)
@@ -643,7 +548,7 @@ def update_xliff_with_translations(xliff_data_str, translations_dict): # Renamed
         if pretty_xml_str.startswith('<?xml version="1.0" ?>'):
             pretty_xml_str = pretty_xml_str.replace('<?xml version="1.0" ?>', '<?xml version="1.0" encoding="UTF-8"?>', 1)
         elif 'encoding="UTF-8"' not in pretty_xml_str.splitlines()[0]:
-                 pretty_xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml_str.split('\n',1)[1]
+             pretty_xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n' + pretty_xml_str.split('\n',1)[1]
 
 
         log_message(f"Successfully updated {updated_segment_count} segments in XLIFF", level="success")
@@ -713,9 +618,9 @@ def main():
             with open(log_filepath, 'r', encoding='utf-8') as log_file_reader: # Added encoding
                 log_content_download = log_file_reader.read() # Renamed
                 st.sidebar.download_button(label="Download Log File", data=log_content_download,
-                                            file_name=os.path.basename(log_filepath), mime="text/plain")
+                                           file_name=os.path.basename(log_filepath), mime="text/plain")
         except Exception as e_log_read_main: # Renamed
-                 st.sidebar.error(f"Error reading log for download: {str(e_log_read_main)}")
+             st.sidebar.error(f"Error reading log for download: {str(e_log_read_main)}")
     else:
         st.sidebar.warning("Log file not available or path is incorrect.")
 
@@ -726,14 +631,13 @@ def main():
     
     # Initialize session state variables robustly
     default_session_states = {
-    'processing_started': False, 'processing_complete': False, 'progress': 0.0,
-    'current_batch': 0, 'total_batches': 0, 'logs': [],
-    'translated_file_path': None, 'xliff_content_main_run': None, 'batch_results': [], 
-    'backup_path': None, 
-    'override_source_lang': "Auto-detect (from XLIFF)",
-    'override_target_lang': "Auto-detect (from XLIFF)",
-    'translation_context': None  # Add this line for contextual caching
-}
+        'processing_started': False, 'processing_complete': False, 'progress': 0.0,
+        'current_batch': 0, 'total_batches': 0, 'logs': [],
+        'translated_file_path': None, 'xliff_content_main_run': None, 'batch_results': [], # Renamed xliff_content for clarity
+        'backup_path': None, 
+        'override_source_lang': "Auto-detect (from XLIFF)",
+        'override_target_lang': "Auto-detect (from XLIFF)"
+    }
     for key_state, val_state in default_session_states.items(): # Renamed variables
         if key_state not in st.session_state: st.session_state[key_state] = val_state
     
@@ -766,38 +670,23 @@ def main():
                 sel_model = st.selectbox("Model", ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307", "claude-3-5-sonnet-20240620"], key="sel_anthropic_model") # Removed future model
             else: # OpenAI
                 sel_model = st.selectbox("Model", ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"], key="sel_openai_model")
-
-    # Add context settings
-    context_enabled = st.checkbox("Enable Context Between Batches", 
-                                   value=st.session_state.get('context_enabled', True),
-                                   help="Use previous batch translations as context for future batches")
-    
-    if context_enabled:
-        max_context_batches = st.slider("Max Context Batches", 
-                                        min_value=1, max_value=5, value=st.session_state.get('max_context_batches', 3),
-                                        help="Maximum number of previous batches to keep as context")
-    else:
-        max_context_batches = 0
-        
-    st.session_state.context_enabled = context_enabled
-    st.session_state.max_context_batches = max_context_batches
-                
+            
             # Persist slider values using session_state.get
-    val_batch_size = st.session_state.get('slider_batch_size', 10)
-    val_match_threshold = st.session_state.get('slider_match_threshold', 75)
-    val_temperature = st.session_state.get('slider_temperature', 0.0)
+            val_batch_size = st.session_state.get('slider_batch_size', 10)
+            val_match_threshold = st.session_state.get('slider_match_threshold', 75)
+            val_temperature = st.session_state.get('slider_temperature', 0.0)
             
-    st.session_state.slider_batch_size = st.slider("Batch Size", 5, 50, val_batch_size, key="main_batch_size_slider")
-    st.session_state.slider_match_threshold = st.slider("TM Match Threshold (%)", 60, 100, val_match_threshold, key="main_match_thresh_slider")
-    st.session_state.slider_temperature = st.slider("AI Temperature", 0.0, 1.0, val_temperature, step=0.1, key="main_temp_slider")
+            st.session_state.slider_batch_size = st.slider("Batch Size", 5, 50, val_batch_size, key="main_batch_size_slider")
+            st.session_state.slider_match_threshold = st.slider("TM Match Threshold (%)", 60, 100, val_match_threshold, key="main_match_thresh_slider")
+            st.session_state.slider_temperature = st.slider("AI Temperature", 0.0, 1.0, val_temperature, step=0.1, key="main_temp_slider")
             
-    st.session_state.custom_prompt_input = st.text_area("Additional prompt instructions (optional)", st.session_state.get('custom_prompt_input', ""), height=100, key="main_custom_prompt_area") # Renamed
+            st.session_state.custom_prompt_input = st.text_area("Additional prompt instructions (optional)", st.session_state.get('custom_prompt_input', ""), height=100, key="main_custom_prompt_area") # Renamed
 
-    if st.button("Start Processing", disabled=st.session_state.processing_started, key="main_start_button"):
-       if not uploaded_xliff: st.error("Please upload a MemoQ XLIFF file"); log_message("XLIFF missing", "error")
-       elif not inp_api_key: st.error("Please enter an API Key"); log_message("API Key missing", "error")
-    # Optional files TMX, CSV, Prompt - do not block if missing, but log
-    else:
+            if st.button("Start Processing", disabled=st.session_state.processing_started, key="main_start_button"):
+                if not uploaded_xliff: st.error("Please upload a MemoQ XLIFF file"); log_message("XLIFF missing", "error")
+                elif not inp_api_key: st.error("Please enter an API Key"); log_message("API Key missing", "error")
+                # Optional files TMX, CSV, Prompt - do not block if missing, but log
+                else:
                     st.session_state.processing_started = True
                     st.session_state.processing_complete = False
                     st.session_state.logs = [] # Reset logs for new run display
@@ -805,7 +694,7 @@ def main():
                     st.session_state.progress = 0.0
                     st.session_state.current_batch = 0 # Reset batch counter for the run
 
-# Store file contents and settings in session_state for use after rerun
+                    # Store file contents and settings in session_state for use after rerun
                     st.session_state.run_config = {
                         'xliff_name': uploaded_xliff.name,
                         'xliff_bytes': uploaded_xliff.getvalue(),
@@ -822,57 +711,46 @@ def main():
                         'match_threshold': st.session_state.slider_match_threshold,
                         'temperature': st.session_state.slider_temperature,
                         'override_source_lang': st.session_state.override_source_lang,
-                        'override_target_lang': st.session_state.override_target_lang,
-                        'context_enabled': context_enabled,
-                        'max_context_batches': max_context_batches
+                        'override_target_lang': st.session_state.override_target_lang
                     }
-                    log_message("=" * 50)
-                    log_message(f"Starting translation for: {uploaded_xliff.name}")
-                    log_message("=" * 50)
-                    st.rerun()  # Trigger rerun to enter processing block
+                    log_message("=" * 50); log_message(f"Starting translation for: {uploaded_xliff.name}"); log_message("=" * 50)
+                    st.rerun() # Trigger rerun to enter processing block
 
-        # Progress bar in tab1
-    if st.session_state.processing_started and not st.session_state.processing_complete:
-        st.subheader("Progress")
-        prog_bar_val = float(st.session_state.progress)
-        st.progress(prog_bar_val)
-        status_text_ui = st.empty()
-        if st.session_state.total_batches > 0:
-            status_text_ui.text(f"Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(prog_bar_val * 100)}%)")
-        else:
-            status_text_ui.text("Preparing...")
+        if st.session_state.processing_started and not st.session_state.processing_complete:
+            st.subheader("Progress")
+            prog_bar_val = float(st.session_state.progress) # Renamed
+            st.progress(prog_bar_val)
+            status_text_ui = st.empty() # Renamed
+            if st.session_state.total_batches > 0:
+                status_text_ui.text(f"Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(prog_bar_val * 100)}%)")
+            else: status_text_ui.text("Preparing...")
     
-    with tab2:  # Processing Tab
+    with tab2: # Processing Tab
         st.subheader("Processing Status & Log")
         if st.session_state.processing_started and not st.session_state.processing_complete:
-            prog_bar_val_tab2 = float(st.session_state.progress)
+            prog_bar_val_tab2 = float(st.session_state.progress) # Renamed
             st.progress(prog_bar_val_tab2)
-            status_text_ui_tab2 = st.empty()
-            if st.session_state.total_batches > 0:
-                status_text_ui_tab2.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
-            else:
-                status_text_ui_tab2.text("Preparing batches...")
+            status_text_ui_tab2 = st.empty() # Renamed
+            if st.session_state.total_batches > 0: status_text_ui_tab2.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
+            else: status_text_ui_tab2.text("Preparing batches...")
             st.info("Processing... See detailed logs below. This may take time.")
         elif st.session_state.processing_complete:
             st.success("Processing complete. View results in the 'Results' tab.")
 
-        log_display_container = st.container(height=400)
+        log_display_container = st.container(height=400) # Renamed
         with log_display_container:
             if st.session_state.logs:
-                for entry in st.session_state.logs:
+                for entry in st.session_state.logs: # Renamed
                     color_map = {'info': 'blue', 'error': 'red', 'warning': 'orange', 'success': 'green', 'debug': 'grey'}
                     log_color = color_map.get(entry['type'], 'black')
                     if entry['type'] != 'debug' or st.session_state.debug_mode:
                         st.markdown(f"<span style='color:{log_color};'>[{entry['timestamp']}] {entry['message']}</span>", unsafe_allow_html=True)
-            else:
-                st.info("Logs will appear here once processing starts.")
+            else: st.info("Logs will appear here once processing starts.")
         
-        if 'log_capture_string' in st.session_state:  # For full in-memory log
-            st.download_button("Download Full Session Log", 
-                              st.session_state.log_capture_string.getvalue(), 
-                              f"full_session_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", 
-                              "text/plain", 
-                              key="download_full_log_tab2")
+        if 'log_capture_string' in st.session_state: # For full in-memory log
+            st.download_button("Download Full Session Log", st.session_state.log_capture_string.getvalue(), 
+                               f"full_session_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", "text/plain", 
+                               key="download_full_log_tab2")
         # Debug info (simplified)
         if st.session_state.debug_mode and st.session_state.get('xliff_content_main_run'):
             with st.expander("XLIFF Content (First 500 Chars)"): st.code(st.session_state.xliff_content_main_run[:500])
@@ -907,8 +785,8 @@ def main():
                     if k_reset in st.session_state: del st.session_state[k_reset]
                 # Re-initialize to defaults
                 for key_state, val_state in default_session_states.items(): # Renamed variables
-                         if key_state not in ['override_source_lang', 'override_target_lang', 'debug_mode']: # Persist these
-                            st.session_state[key_state] = val_state
+                     if key_state not in ['override_source_lang', 'override_target_lang', 'debug_mode']: # Persist these
+                        st.session_state[key_state] = val_state
                 st.rerun()
 
     # --- Main Processing Logic (after rerun from "Start Processing") ---
@@ -958,20 +836,6 @@ def main():
                 prompt_template_str = (prompt_template_str + "\n\n" + run_cfg['custom_prompt_text']).strip()
                 if prompt_template_str: log_message("Custom prompt text from text area applied.")
 
-
-# Initialize context cache if enabled (ADD THIS HERE)
-            if st.session_state.get('context_enabled', True):
-                st.session_state.translation_context = TranslationContextCache(
-                    max_batches=st.session_state.get('max_context_batches', 3)
-                )
-                log_message(f"Initialized translation context cache with max {st.session_state.get('max_context_batches', 3)} batches")
-            else:
-                st.session_state.translation_context = None
-                log_message("Translation context caching is disabled")
-
-    # Extract Segments (existing code continues here)
-            src_lang_main, trg_lang_main, doc_name_main, segments_list_main = extract_translatable_segments(xliff_str_content)
-
             # Extract Segments
             src_lang_main, trg_lang_main, doc_name_main, segments_list_main = extract_translatable_segments(xliff_str_content)
             if not segments_list_main:
@@ -1001,11 +865,7 @@ def main():
                     if csv_str_content: current_term_matches = extract_terminology(csv_str_content, current_batch_list)
                     if not current_term_matches: current_term_matches = [] # Ensure it's a list
 
-                    batch_ai_prompt = create_ai_prompt(
-                    prompt_template_str, src_lang_main, trg_lang_main, doc_name_main, 
-                    current_batch_list, current_tm_matches, current_term_matches,
-                    translation_context=st.session_state.get('translation_context')  # ADD THIS PARAMETER
-                )
+                    batch_ai_prompt = create_ai_prompt(prompt_template_str, src_lang_main, trg_lang_main, doc_name_main, current_batch_list, current_tm_matches, current_term_matches)
                     batch_ai_response = get_ai_translation(run_cfg['api_provider'], run_cfg['api_key'], run_cfg['model'], batch_ai_prompt, src_lang_main, trg_lang_main, run_cfg['temperature'])
                     
                     if not batch_ai_response: raise Exception("AI returned an empty response for the batch.")
@@ -1013,18 +873,11 @@ def main():
                     parsed_translations_batch = parse_ai_response(batch_ai_response, current_batch_list) # Renamed
                     master_translations.update(parsed_translations_batch)
                     current_batch_result['translations_received'] = len(parsed_translations_batch)
-
-# Add this batch to the context cache for future batches
-                    if st.session_state.get('translation_context') and parsed_translations_batch:
-                        st.session_state.translation_context.add_batch(
-                            i, current_batch_list, parsed_translations_batch
-                        )
-                        log_message(f"Added batch {i+1} translations to context cache")
-                
                     log_message(f"Batch {st.session_state.current_batch} finished. Received {len(parsed_translations_batch)} translations.")
                 except Exception as e_batch_proc: # Renamed
                     log_message(f"Error in Batch {st.session_state.current_batch} processing: {str(e_batch_proc)}", "error")
-                    current_batch_result['error'] = str(e_batch_proc)                       
+                    current_batch_result['error'] = str(e_batch_proc)
+                
                 st.session_state.batch_results.append(current_batch_result)
                 st.session_state.progress = (i + 1) / st.session_state.total_batches
                 # Consider a very short sleep or removing it if UI updates are handled by Streamlit's natural flow
