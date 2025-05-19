@@ -783,15 +783,15 @@ def main():
     st.session_state.max_context_batches = max_context_batches
                 
             # Persist slider values using session_state.get
-          val_batch_size = st.session_state.get('slider_batch_size', 10)
-          val_match_threshold = st.session_state.get('slider_match_threshold', 75)
-          val_temperature = st.session_state.get('slider_temperature', 0.0)
+    val_batch_size = st.session_state.get('slider_batch_size', 10)
+    val_match_threshold = st.session_state.get('slider_match_threshold', 75)
+    val_temperature = st.session_state.get('slider_temperature', 0.0)
             
-            st.session_state.slider_batch_size = st.slider("Batch Size", 5, 50, val_batch_size, key="main_batch_size_slider")
-            st.session_state.slider_match_threshold = st.slider("TM Match Threshold (%)", 60, 100, val_match_threshold, key="main_match_thresh_slider")
-            st.session_state.slider_temperature = st.slider("AI Temperature", 0.0, 1.0, val_temperature, step=0.1, key="main_temp_slider")
+    st.session_state.slider_batch_size = st.slider("Batch Size", 5, 50, val_batch_size, key="main_batch_size_slider")
+    st.session_state.slider_match_threshold = st.slider("TM Match Threshold (%)", 60, 100, val_match_threshold, key="main_match_thresh_slider")
+    st.session_state.slider_temperature = st.slider("AI Temperature", 0.0, 1.0, val_temperature, step=0.1, key="main_temp_slider")
             
-            st.session_state.custom_prompt_input = st.text_area("Additional prompt instructions (optional)", st.session_state.get('custom_prompt_input', ""), height=100, key="main_custom_prompt_area") # Renamed
+    st.session_state.custom_prompt_input = st.text_area("Additional prompt instructions (optional)", st.session_state.get('custom_prompt_input', ""), height=100, key="main_custom_prompt_area") # Renamed
 
             if st.button("Start Processing", disabled=st.session_state.processing_started, key="main_start_button"):
                 if not uploaded_xliff: st.error("Please upload a MemoQ XLIFF file"); log_message("XLIFF missing", "error")
