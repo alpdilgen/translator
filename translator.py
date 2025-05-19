@@ -435,7 +435,7 @@ def extract_terminology(csv_content, source_segments):
     """Extract terminology matches from CSV file"""
     try:
         log_message("Extracting terminology matches")
-        df = pd.read_csv(pd.StringIO(csv_content))
+        df = pd.read_csv(io.StringIO(csv_content))
         
         if len(df.columns) < 2:
             log_message("CSV file must have at least 2 columns", level="warning")
