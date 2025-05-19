@@ -797,7 +797,7 @@ def main():
        if not uploaded_xliff: st.error("Please upload a MemoQ XLIFF file"); log_message("XLIFF missing", "error")
        elif not inp_api_key: st.error("Please enter an API Key"); log_message("API Key missing", "error")
     # Optional files TMX, CSV, Prompt - do not block if missing, but log
-        else:
+    else:
                     st.session_state.processing_started = True
                     st.session_state.processing_complete = False
                     st.session_state.logs = [] # Reset logs for new run display
