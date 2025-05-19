@@ -409,8 +409,15 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
     try:
         if api_provider == 'anthropic':
             headers = {"x-api-key": api_key, "content-type": "application/json", "anthropic-version": "2023-06-01"}
-            # Simplified system prompt for brevity in this view
-            system_prompt_text = (f"Professional translator for technical docs. Preserve formatting. {source_lang} to {target_lang}.")
+            
+            # UPDATED: Using more detailed system prompt
+            system_prompt_text = (
+                "You are a professional translator specializing in technical documents. "
+                "Translate precisely while preserving all formatting, tags, and special characters. "
+                f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
+                "Pay special attention to cultural nuances and linguistic patterns."
+            )
+            
             data = {"model": model, "max_tokens": 4000, "temperature": temperature,
                     "system": system_prompt_text, "messages": [{"role": "user", "content": prompt}]}
             response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data, timeout=120)
@@ -421,7 +428,15 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             ai_response_text = result["content"][0]["text"]
         elif api_provider == 'openai': # Corrected: was 'else:'
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-            system_prompt_text_openai = (f"Professional translator for technical docs. Preserve formatting. {source_lang} to {target_lang}.") # Renamed
+            
+            # UPDATED: Using more detailed system prompt
+            system_prompt_text_openai = (
+                "You are a professional translator specializing in technical documents. "
+                "Translate precisely while preserving all formatting, tags, and special characters. "
+                f"Ensure appropriate terminology consistency and grammatical correctness when translating from {source_lang} to {target_lang}. "
+                "Pay special attention to cultural nuances and linguistic patterns."
+            )
+            
             data = {"model": model, "messages": [{"role": "system", "content": system_prompt_text_openai}, {"role": "user", "content": prompt}],
                     "max_tokens": 4000, "temperature": temperature}
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data, timeout=120)
