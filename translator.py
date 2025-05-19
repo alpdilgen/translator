@@ -832,15 +832,15 @@ def main():
                     st.rerun()  # Trigger rerun to enter processing block
 
         # Progress bar in tab1
-        if st.session_state.processing_started and not st.session_state.processing_complete:
-            st.subheader("Progress")
-            prog_bar_val = float(st.session_state.progress)
-            st.progress(prog_bar_val)
-            status_text_ui = st.empty()
-            if st.session_state.total_batches > 0:
-                status_text_ui.text(f"Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(prog_bar_val * 100)}%)")
-            else:
-                status_text_ui.text("Preparing...")
+    if st.session_state.processing_started and not st.session_state.processing_complete:
+        st.subheader("Progress")
+        prog_bar_val = float(st.session_state.progress)
+        st.progress(prog_bar_val)
+        status_text_ui = st.empty()
+        if st.session_state.total_batches > 0:
+            status_text_ui.text(f"Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(prog_bar_val * 100)}%)")
+        else:
+            status_text_ui.text("Preparing...")
     
     with tab2:  # Processing Tab
         st.subheader("Processing Status & Log")
