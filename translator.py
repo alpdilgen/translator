@@ -682,6 +682,9 @@ def create_ai_prompt(prompt_template, source_lang, target_lang, document_name, b
             f.write(prompt)
         
         log_message(f"Saved full prompt to {prompt_path}")
+
+        # Log the prompt content
+        log_message(f"AI Prompt Content (Batch {batch_index}):\n---BEGIN PROMPT---\n{prompt}\n---END PROMPT---", level="info")
         
         # For debug mode, also log the prompt content
         if hasattr(st.session_state, 'debug_mode') and st.session_state.debug_mode:
@@ -702,6 +705,8 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
     import json
     
     try:
+        batch_index = st.session_state.current_batch if hasattr(st.session_state, 'current_batch') else 0 # Get batch_index
+
         if api_provider == 'anthropic':
             # Direct API call to Anthropic
             headers = {
@@ -740,20 +745,24 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             result = response.json()
             log_message("Received response from Anthropic API")
             
+            ai_response_content = result["content"][0]["text"] # Store AI response
+
             # Save the response to a file
             response_dir = os.path.join(os.getcwd(), 'responses')
             os.makedirs(response_dir, exist_ok=True)
-            batch_index = st.session_state.current_batch if hasattr(st.session_state, 'current_batch') else 0
             timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             response_filename = f"response_batch_{batch_index}_{timestamp}.txt"
             response_path = os.path.join(response_dir, response_filename)
             
             with open(response_path, 'w', encoding='utf-8') as f:
-                f.write(result["content"][0]["text"])
+                f.write(ai_response_content)
             
             log_message(f"Saved AI response to {response_path}")
+
+            # Log the Anthropic response content
+            log_message(f"AI Response Content (Batch {batch_index} - Anthropic):\n---BEGIN RESPONSE---\n{ai_response_content}\n---END RESPONSE---", level="info")
             
-            return result["content"][0]["text"]
+            return ai_response_content
         
         else:  # OpenAI
             # Direct API call to OpenAI
@@ -794,21 +803,25 @@ def get_ai_translation(api_provider, api_key, model, prompt, source_lang, target
             
             result = response.json()
             log_message("Received response from OpenAI API")
+
+            ai_response_content = result["choices"][0]["message"]["content"] # Store AI response
             
             # Save the response to a file
             response_dir = os.path.join(os.getcwd(), 'responses')
             os.makedirs(response_dir, exist_ok=True)
-            batch_index = st.session_state.current_batch if hasattr(st.session_state, 'current_batch') else 0
             timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             response_filename = f"response_batch_{batch_index}_{timestamp}.txt"
             response_path = os.path.join(response_dir, response_filename)
             
             with open(response_path, 'w', encoding='utf-8') as f:
-                f.write(result["choices"][0]["message"]["content"])
+                f.write(ai_response_content)
             
             log_message(f"Saved AI response to {response_path}")
+
+            # Log the OpenAI response content
+            log_message(f"AI Response Content (Batch {batch_index} - OpenAI):\n---BEGIN RESPONSE---\n{ai_response_content}\n---END RESPONSE---", level="info")
             
-            return result["choices"][0]["message"]["content"]
+            return ai_response_content
     
     except requests.exceptions.RequestException as e:
         error_message = f"Network error: {str(e)}"
@@ -1013,12 +1026,12 @@ def main():
     st.sidebar.title("Log Information")
     if 'log_filepath' in globals():
         st.sidebar.info(f"Log file: {os.path.basename(log_filepath)}")
-        st.sidebar.info(f"Location: {log_dir}")
+        st.sidebar.info(f"Location: {log_dir}") # Using global log_dir from setup_logging
         
         # Add download button for log file
         if os.path.exists(log_filepath):
-            with open(log_filepath, 'r') as log_file:
-                log_content = log_file.read()
+            with open(log_filepath, 'r', encoding='utf-8') as log_file_content_reader: # Added encoding
+                log_content = log_file_content_reader.read()
                 st.sidebar.download_button(
                     label="Download Log File",
                     data=log_content,
@@ -1106,8 +1119,7 @@ def main():
             if api_provider == "anthropic":
                 model = st.selectbox("Model", 
                                     ["claude-3-opus-20240229", "claude-3-sonnet-20240229", 
-                                     "claude-3-haiku-20240307", "claude-3-5-sonnet-20240620",
-                                     "claude-3-7-sonnet-20250219"])
+                                     "claude-3-haiku-20240307", "claude-3-5-sonnet-20240620"]) # Removed future date model
             else:
                 model = st.selectbox("Model", 
                                     ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"])
@@ -1135,23 +1147,25 @@ def main():
         if st.session_state.processing_started:
             st.subheader("Progress")
             progress_bar = st.progress(st.session_state.progress)
-            status = st.empty()
+            status_text_area = st.empty() # Renamed for clarity
             if st.session_state.total_batches > 0:
-                status.text(f"Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
+                status_text_area.text(f"Batch {st.session_state.current_batch}/{st.session_state.total_batches} ({int(st.session_state.progress * 100)}%)")
             else:
-                status.text("Preparing...")
+                status_text_area.text("Preparing...")
     
     # Tab 2: Processing
     with tab2:
         st.subheader("Processing Status")
         
         if st.session_state.processing_started:
-            progress_bar = st.progress(st.session_state.progress)
-            status = st.empty()
+            # Re-declare progress_bar and status_text_area for this tab's scope if needed, or ensure they are accessible
+            # If they are declared outside, they might not update correctly across tabs without rerun
+            progress_bar_tab2 = st.progress(st.session_state.progress)
+            status_text_area_tab2 = st.empty()
             if st.session_state.total_batches > 0:
-                status.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
+                status_text_area_tab2.text(f"Processing batch {st.session_state.current_batch} of {st.session_state.total_batches}")
             else:
-                status.text("Preparing batches...")
+                status_text_area_tab2.text("Preparing batches...")
             
             if not st.session_state.processing_complete:
                 with st.spinner('Processing... Please wait'):
@@ -1159,20 +1173,20 @@ def main():
         
         # Process log
         st.subheader("Process Log")
-        log_container = st.container(height=400)  # Make this taller
+        log_container = st.container(height=400)
         with log_container:
             if 'logs' in st.session_state and st.session_state.logs:
-                for log in st.session_state.logs:
-                    if log['type'] == 'info':
-                        st.text(f"[{log['timestamp']}] {log['message']}")
-                    elif log['type'] == 'error':
-                        st.error(f"[{log['timestamp']}] {log['message']}")
-                    elif log['type'] == 'warning':
-                        st.warning(f"[{log['timestamp']}] {log['message']}")
-                    elif log['type'] == 'success':
-                        st.success(f"[{log['timestamp']}] {log['message']}")
-                    elif log['type'] == 'debug' and debug_mode:
-                        st.info(f"[DEBUG] [{log['timestamp']}] {log['message']}")
+                for log_entry in st.session_state.logs: # Renamed log to log_entry
+                    if log_entry['type'] == 'info':
+                        st.text(f"[{log_entry['timestamp']}] {log_entry['message']}")
+                    elif log_entry['type'] == 'error':
+                        st.error(f"[{log_entry['timestamp']}] {log_entry['message']}")
+                    elif log_entry['type'] == 'warning':
+                        st.warning(f"[{log_entry['timestamp']}] {log_entry['message']}")
+                    elif log_entry['type'] == 'success':
+                        st.success(f"[{log_entry['timestamp']}] {log_entry['message']}")
+                    elif log_entry['type'] == 'debug' and debug_mode:
+                        st.info(f"[DEBUG] [{log_entry['timestamp']}] {log_entry['message']}")
             else:
                 st.info("No logs available yet.")
         
@@ -1201,34 +1215,34 @@ def main():
                     st.info("No raw logs available.")
             
             # Add prompt viewer
-            prompt_dir = os.path.join(os.getcwd(), 'prompts')
-            if os.path.exists(prompt_dir):
-                prompt_files = [f for f in os.listdir(prompt_dir) if f.endswith('.txt')]
+            prompt_dir_debug = os.path.join(os.getcwd(), 'prompts') # Renamed to avoid conflict
+            if os.path.exists(prompt_dir_debug):
+                prompt_files = [f for f in os.listdir(prompt_dir_debug) if f.endswith('.txt')]
                 if prompt_files:
                     with st.expander("View Prompts"):
                         selected_prompt = st.selectbox("Select prompt file to view", prompt_files)
-                        prompt_path = os.path.join(prompt_dir, selected_prompt)
+                        prompt_path_debug = os.path.join(prompt_dir_debug, selected_prompt)
                         try:
-                            with open(prompt_path, 'r', encoding='utf-8') as f:
-                                prompt_content = f.read()
+                            with open(prompt_path_debug, 'r', encoding='utf-8') as f_prompt:
+                                prompt_content = f_prompt.read()
                             st.code(prompt_content)
-                        except Exception as e:
-                            st.error(f"Error reading prompt file: {str(e)}")
+                        except Exception as e_prompt:
+                            st.error(f"Error reading prompt file: {str(e_prompt)}")
             
             # Add response viewer
-            response_dir = os.path.join(os.getcwd(), 'responses')
-            if os.path.exists(response_dir):
-                response_files = [f for f in os.listdir(response_dir) if f.endswith('.txt')]
+            response_dir_debug = os.path.join(os.getcwd(), 'responses') # Renamed
+            if os.path.exists(response_dir_debug):
+                response_files = [f for f in os.listdir(response_dir_debug) if f.endswith('.txt')]
                 if response_files:
                     with st.expander("View AI Responses"):
                         selected_response = st.selectbox("Select response file to view", response_files)
-                        response_path = os.path.join(response_dir, selected_response)
+                        response_path_debug = os.path.join(response_dir_debug, selected_response)
                         try:
-                            with open(response_path, 'r', encoding='utf-8') as f:
-                                response_content = f.read()
+                            with open(response_path_debug, 'r', encoding='utf-8') as f_response:
+                                response_content = f_response.read()
                             st.code(response_content)
-                        except Exception as e:
-                            st.error(f"Error reading response file: {str(e)}")
+                        except Exception as e_response:
+                            st.error(f"Error reading response file: {str(e_response)}")
     
     # Tab 3: Results
     with tab3:
@@ -1238,28 +1252,28 @@ def main():
             st.success("Translation completed successfully!")
             
             if st.session_state.translated_file_path:
-                with open(st.session_state.translated_file_path, 'rb') as f:
+                with open(st.session_state.translated_file_path, 'rb') as f_download:
                     st.download_button(
                         label="Download Translated File",
-                        data=f,
+                        data=f_download,
                         file_name=os.path.basename(st.session_state.translated_file_path),
-                        mime="application/xliff+xml"
+                        mime="application/xliff+xml" # or appropriate mime type if it's a text file
                     )
             
             # Batch results
             if st.session_state.batch_results:
                 st.subheader("Batch Summary")
                 
-                for i, result in enumerate(st.session_state.batch_results):
+                for i, result_item in enumerate(st.session_state.batch_results): # Renamed result
                     with st.expander(f"Batch {i+1}"):
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Processed", result.get('segments_processed', 0))
-                        with col2:
-                            st.metric("Translated", result.get('translations_received', 0))
+                        col_res1, col_res2 = st.columns(2) # Renamed columns
+                        with col_res1:
+                            st.metric("Processed", result_item.get('segments_processed', 0))
+                        with col_res2:
+                            st.metric("Translated", result_item.get('translations_received', 0))
                         
-                        if 'error' in result:
-                            st.error(f"Error: {result['error']}")
+                        if 'error' in result_item:
+                            st.error(f"Error: {result_item['error']}")
         
         # Reset button
         if st.session_state.processing_started:
@@ -1283,7 +1297,7 @@ def main():
             st.error("Please upload a MemoQ XLIFF file")
             log_message("MemoQ XLIFF file not uploaded", level="error")
             return
-        if not tmx_file:
+        if not tmx_file: # Assuming TMX and CSV are now mandatory based on your original context
             st.error("Please upload a TMX file")
             log_message("TMX file not uploaded", level="error")
             return
@@ -1302,6 +1316,7 @@ def main():
         st.session_state.logs = []
         st.session_state.batch_results = []
         st.session_state.progress = 0
+        st.session_state.current_batch = 0 # Initialize current_batch here
         
         # Log processing start
         log_message("=" * 50)
@@ -1324,17 +1339,17 @@ def main():
                 xliff_bytes = xliff_file.read()
                 
                 # Create backup of original file
-                backup_path = create_backup(xliff_file, xliff_file.name)
-                st.session_state.backup_path = backup_path
+                backup_path_main = create_backup(xliff_file, xliff_file.name) # Renamed
+                st.session_state.backup_path = backup_path_main
                 
                 # Display backup information in sidebar
-                if backup_path:
-                    st.sidebar.success(f"Backup created: {os.path.basename(backup_path)}")
-                    with open(backup_path, 'rb') as backup_file:
+                if backup_path_main:
+                    st.sidebar.success(f"Backup created: {os.path.basename(backup_path_main)}")
+                    with open(backup_path_main, 'rb') as backup_file_rb:
                         st.sidebar.download_button(
                             label="Download Backup File",
-                            data=backup_file,
-                            file_name=os.path.basename(backup_path),
+                            data=backup_file_rb,
+                            file_name=os.path.basename(backup_path_main),
                             mime="application/octet-stream"
                         )
                 
@@ -1343,19 +1358,19 @@ def main():
                 
                 # Try to decode with different encodings
                 try:
-                    xliff_content = xliff_bytes.decode('utf-8')
+                    xliff_content_main = xliff_bytes.decode('utf-8') # Renamed
                     log_message("Successfully decoded XLIFF file using UTF-8 encoding")
                 except UnicodeDecodeError:
                     log_message("Failed to decode XLIFF with UTF-8, trying UTF-16", level="warning")
                     try:
-                        xliff_content = xliff_bytes.decode('utf-16')
+                        xliff_content_main = xliff_bytes.decode('utf-16')
                         log_message("Successfully decoded XLIFF file using UTF-16 encoding")
                     except UnicodeDecodeError:
                         if xliff_bytes.startswith(b'\xff\xfe') or xliff_bytes.startswith(b'\xfe\xff'):
-                            xliff_content = xliff_bytes.decode('utf-16')
+                            xliff_content_main = xliff_bytes.decode('utf-16')
                             log_message("Successfully decoded XLIFF file using UTF-16 with BOM")
                         else:
-                            xliff_content = xliff_bytes.decode('latin-1')
+                            xliff_content_main = xliff_bytes.decode('latin-1')
                             msg = "Could not determine the correct encoding for the XLIFF file. Using Latin-1 encoding as fallback."
                             log_message(msg, level="warning")
                             st.warning(msg)
@@ -1365,19 +1380,19 @@ def main():
                 # Read TMX file with similar handling
                 tmx_bytes = tmx_file.read()
                 try:
-                    tmx_content = tmx_bytes.decode('utf-8')
+                    tmx_content_main = tmx_bytes.decode('utf-8') # Renamed
                     log_message("Successfully decoded TMX file using UTF-8 encoding")
                 except UnicodeDecodeError:
                     log_message("Failed to decode TMX with UTF-8, trying UTF-16", level="warning")
                     try:
-                        tmx_content = tmx_bytes.decode('utf-16')
+                        tmx_content_main = tmx_bytes.decode('utf-16')
                         log_message("Successfully decoded TMX file using UTF-16 encoding")
                     except UnicodeDecodeError:
                         if tmx_bytes.startswith(b'\xff\xfe') or tmx_bytes.startswith(b'\xfe\xff'):
-                            tmx_content = tmx_bytes.decode('utf-16')
+                            tmx_content_main = tmx_bytes.decode('utf-16')
                             log_message("Successfully decoded TMX file using UTF-16 with BOM")
                         else:
-                            tmx_content = tmx_bytes.decode('latin-1')
+                            tmx_content_main = tmx_bytes.decode('latin-1')
                             msg = "Could not determine the correct encoding for the TMX file. Using Latin-1 encoding as fallback."
                             log_message(msg, level="warning")
                             st.warning(msg)
@@ -1385,197 +1400,193 @@ def main():
                 # Read CSV file with similar handling
                 csv_bytes = csv_file.read()
                 try:
-                    csv_content = csv_bytes.decode('utf-8')
+                    csv_content_main = csv_bytes.decode('utf-8') # Renamed
                     log_message("Successfully decoded CSV file using UTF-8 encoding")
                 except UnicodeDecodeError:
                     log_message("Failed to decode CSV with UTF-8, trying UTF-16", level="warning")
                     try:
-                        csv_content = csv_bytes.decode('utf-16')
+                        csv_content_main = csv_bytes.decode('utf-16')
                         log_message("Successfully decoded CSV file using UTF-16 encoding")
                     except UnicodeDecodeError:
                         if csv_bytes.startswith(b'\xff\xfe') or csv_bytes.startswith(b'\xfe\xff'):
-                            csv_content = csv_bytes.decode('utf-16')
+                            csv_content_main = csv_bytes.decode('utf-16')
                             log_message("Successfully decoded CSV file using UTF-16 with BOM")
                         else:
-                            csv_content = csv_bytes.decode('latin-1')
+                            csv_content_main = csv_bytes.decode('latin-1')
                             msg = "Could not determine the correct encoding for the CSV file. Using Latin-1 encoding as fallback."
                             log_message(msg, level="warning")
                             st.warning(msg)
                 
                 # Get prompt template
-                prompt_template = ""
+                prompt_template_main = "" # Renamed
                 if prompt_file:
                     try:
                         prompt_bytes = prompt_file.read()
                         try:
-                            prompt_template = prompt_bytes.decode('utf-8')
+                            prompt_template_main = prompt_bytes.decode('utf-8')
                         except UnicodeDecodeError:
                             try:
-                                prompt_template = prompt_bytes.decode('utf-16')
+                                prompt_template_main = prompt_bytes.decode('utf-16')
                             except UnicodeDecodeError:
-                                prompt_template = prompt_bytes.decode('latin-1')
+                                prompt_template_main = prompt_bytes.decode('latin-1')
                         log_message("Successfully loaded prompt template")
                     except Exception as prompt_error:
                         log_message(f"Error reading prompt file: {str(prompt_error)}", level="warning")
                 
                 if custom_prompt_text:
-                    prompt_template += "\n\n" + custom_prompt_text if prompt_template else custom_prompt_text
+                    prompt_template_main += "\n\n" + custom_prompt_text if prompt_template_main else custom_prompt_text
                     log_message("Added custom prompt text")
             
             except Exception as file_error:
                 log_message(f"Error reading input files: {str(file_error)}", level="error")
                 st.session_state.processing_complete = True
+                st.rerun() # Added rerun on file error
                 return
             
             # Store XLIFF content for later processing
-            st.session_state.xliff_content = xliff_content
+            st.session_state.xliff_content = xliff_content_main
             
             # Add log
-            log_message(f"Starting translation process")
+            log_message(f"Starting translation process") # This log is a bit redundant, consider removing
             
             # Extract segments from XLIFF
-            source_lang, target_lang, document_name, segments = extract_translatable_segments(xliff_content)
+            source_lang_main, target_lang_main, document_name_main, segments_main = extract_translatable_segments(xliff_content_main) # Renamed vars
             
-            if not segments:
+            if not segments_main:
                 log_message("No translatable segments found in the XLIFF file", level="error")
                 st.session_state.processing_complete = True
+                st.rerun() # Added rerun
                 return
             
             # Log language information
-            source_lang_name = get_language_name(source_lang)
-            target_lang_name = get_language_name(target_lang)
+            source_lang_name_main = get_language_name(source_lang_main) # Renamed
+            target_lang_name_main = get_language_name(target_lang_main) # Renamed
             
-            log_message(f"Translation: {source_lang_name} ({source_lang}) -> {target_lang_name} ({target_lang})")
+            log_message(f"Translation: {source_lang_name_main} ({source_lang_main}) -> {target_lang_name_main} ({target_lang_main})")
             
             # Prepare batches
-            batches = []
-            for i in range(0, len(segments), batch_size):
-                batches.append(segments[i:i+batch_size])
+            batches_main = [] # Renamed
+            for i in range(0, len(segments_main), batch_size):
+                batches_main.append(segments_main[i:i+batch_size])
             
-            st.session_state.total_batches = len(batches)
-            log_message(f"Found {len(segments)} segments to translate in {len(batches)} batches")
+            st.session_state.total_batches = len(batches_main)
+            log_message(f"Found {len(segments_main)} segments to translate in {len(batches_main)} batches")
             
             # Process batches
-            all_translations = {}
+            all_translations_main = {} # Renamed
             
-            # Setup progress display
-            progress_placeholder = st.empty()
+            # Setup progress display (This might be better handled inside the loop or by forcing rerun)
+            # progress_placeholder_main = st.empty() # Placeholder for progress in the main logic flow
             
             # Process each batch
-            for batch_index, batch in enumerate(batches):
-                # Update progress
-                batch_progress = (batch_index) / len(batches)
-                st.session_state.current_batch = batch_index + 1
-                st.session_state.progress = batch_progress
+            for batch_index_main, batch_item in enumerate(batches_main): # Renamed vars
+                st.session_state.current_batch = batch_index_main + 1 # Update current batch for logging
+                st.session_state.progress = (batch_index_main) / len(batches_main)
                 
-                # Update progress display
-                progress_placeholder.progress(batch_progress)
-                
-                # Process current batch
-                batch_result = {'batch_index': batch_index}
+                # Update progress display - This needs careful handling with Streamlit's execution model
+                # Consider st.rerun() or more sophisticated state management if UI updates are critical here
+                # For now, relying on the progress bar in Tab 1 and Tab 2 which read from session_state
+
+                batch_result_main = {'batch_index': batch_index_main} # Renamed
                 
                 try:
-                    msg = f"Processing batch {batch_index + 1}/{len(batches)} ({len(batch)} segments)"
-                    log_message(msg)
+                    msg_batch = f"Processing batch {st.session_state.current_batch}/{len(batches_main)} ({len(batch_item)} segments)" # Renamed
+                    log_message(msg_batch)
                     
                     # Find TM matches
-                    tm_matches = extract_tm_matches(tmx_content, source_lang, target_lang, batch, match_threshold)
+                    tm_matches_main = extract_tm_matches(tmx_content_main, source_lang_main, target_lang_main, batch_item, match_threshold) # Renamed
                     
                     # Find terminology matches
-                    log_message("Identifying terminology matches")
-                    term_matches = extract_terminology(csv_content, batch)
-                    log_message(f"Found {len(term_matches)} relevant terminology entries")
+                    log_message("Identifying terminology matches") # This log is within loop, might be verbose
+                    term_matches_main = extract_terminology(csv_content_main, batch_item) # Renamed
+                    log_message(f"Found {len(term_matches_main)} relevant terminology entries")
                     
                     # Create prompt
-                    prompt = create_ai_prompt(
-                        prompt_template, source_lang, target_lang, document_name, 
-                        batch, tm_matches, term_matches
+                    prompt_main = create_ai_prompt( # Renamed
+                        prompt_template_main, source_lang_main, target_lang_main, document_name_main, 
+                        batch_item, tm_matches_main, term_matches_main
                     )
                     
                     # Get translations from AI
-                    ai_response = get_ai_translation(
-                        api_provider, api_key, model, prompt, source_lang, target_lang, temperature
+                    ai_response_main = get_ai_translation( # Renamed
+                        api_provider, api_key, model, prompt_main, source_lang_main, target_lang_main, temperature
                     )
                     
-                    if not ai_response:
-                        error_msg = "Failed to get translation from API"
-                        log_message(error_msg, level="error")
-                        raise Exception(error_msg)
+                    if not ai_response_main:
+                        error_msg_api = "Failed to get translation from API" # Renamed
+                        log_message(error_msg_api, level="error")
+                        raise Exception(error_msg_api)
                     
-                    log_message("Received translation response")
+                    log_message("Received translation response") # This log is generic
                     
                     # Parse AI response
-                    translations = parse_ai_response(ai_response, batch)
+                    translations_main = parse_ai_response(ai_response_main, batch_item) # Renamed
                     
                     # Add to all translations
-                    all_translations.update(translations)
+                    all_translations_main.update(translations_main)
                     
                     # Update batch result
-                    batch_result['segments_processed'] = len(batch)
-                    batch_result['translations_received'] = len(translations)
+                    batch_result_main['segments_processed'] = len(batch_item)
+                    batch_result_main['translations_received'] = len(translations_main)
                     
                     # Update progress at end of batch
-                    batch_progress = (batch_index + 1) / len(batches)
-                    st.session_state.current_batch = batch_index + 1
-                    st.session_state.progress = batch_progress
+                    st.session_state.progress = (batch_index_main + 1) / len(batches_main)
+                    # progress_placeholder_main.progress(st.session_state.progress) # Update main progress placeholder
+
+                    st.session_state.batch_results.append(batch_result_main)
                     
-                    # Update progress display
-                    progress_placeholder.progress(batch_progress)
+                    # Small delay for UI refresh (might not be effective without rerun)
+                    time.sleep(0.1) 
+                    # Consider st.experimental_rerun() or st.rerun() if UI needs to update per batch
                     
-                    # Add batch result
-                    st.session_state.batch_results.append(batch_result)
-                    
-                    # Small delay for UI refresh
-                    time.sleep(0.1)
-                    
-                except Exception as e:
-                    error_msg = f"Error processing batch {batch_index + 1}: {str(e)}"
-                    log_message(error_msg, level="error")
-                    batch_result['error'] = str(e)
-                    st.session_state.batch_results.append(batch_result)
+                except Exception as e_batch: # Renamed
+                    error_msg_batch = f"Error processing batch {st.session_state.current_batch}: {str(e_batch)}" # Renamed
+                    log_message(error_msg_batch, level="error")
+                    batch_result_main['error'] = str(e_batch)
+                    st.session_state.batch_results.append(batch_result_main)
             
             # Update XLIFF with translations
-            log_message(f"Updating XLIFF file with {len(all_translations)} translations")
+            log_message(f"Updating XLIFF file with {len(all_translations_main)} translations")
             
             # Try to update XLIFF
             try:
-                updated_xliff, updated_count = update_xliff_with_translations(st.session_state.xliff_content, all_translations)
+                updated_xliff_main, updated_count_main = update_xliff_with_translations(st.session_state.xliff_content, all_translations_main) # Renamed
                 
-                if not updated_xliff:
+                if not updated_xliff_main:
                     raise Exception("Failed to update XLIFF file")
                 
                 # Save translated XLIFF
-                final_path = save_translated_xliff(updated_xliff, xliff_file.name)
+                final_path_main = save_translated_xliff(updated_xliff_main, xliff_file.name) # Renamed
                 
-                if not final_path:
+                if not final_path_main:
                     raise Exception("Failed to save translated XLIFF file")
                 
-                log_message(f"Updated {updated_count} segments in the XLIFF file", level="success")
-                log_message(f"Saved translated XLIFF to {os.path.basename(final_path)}", level="success")
+                log_message(f"Updated {updated_count_main} segments in the XLIFF file", level="success")
+                log_message(f"Saved translated XLIFF to {os.path.basename(final_path_main)}", level="success")
                 
                 # Store translated file path for download
-                st.session_state.translated_file_path = final_path
+                st.session_state.translated_file_path = final_path_main
                 
             except Exception as update_error:
                 # Log error
-                error_msg = f"Error updating or saving XLIFF: {str(update_error)}"
-                log_message(error_msg, level="error")
+                error_msg_update = f"Error updating or saving XLIFF: {str(update_error)}" # Renamed
+                log_message(error_msg_update, level="error")
                 
                 # Try to save as text file instead
-                text_path = save_translations_as_text(segments, all_translations, xliff_file.name)
+                text_path_main = save_translations_as_text(segments_main, all_translations_main, xliff_file.name) # Renamed
                 
-                if text_path:
-                    msg = f"Saved translations as text file instead: {os.path.basename(text_path)}"
-                    log_message(msg, level="warning")
+                if text_path_main:
+                    msg_text_save = f"Saved translations as text file instead: {os.path.basename(text_path_main)}" # Renamed
+                    log_message(msg_text_save, level="warning")
                     
                     # Store text file path for download
-                    st.session_state.translated_file_path = text_path
+                    st.session_state.translated_file_path = text_path_main
             
             # Log completion
             log_message("=" * 50)
             log_message(f"Translation process completed")
-            log_message(f"Segments processed: {len(segments)}")
-            log_message(f"Segments translated: {len(all_translations)}")
+            log_message(f"Segments processed: {len(segments_main)}")
+            log_message(f"Segments translated: {len(all_translations_main)}")
             log_message(f"Translated file: {st.session_state.translated_file_path}")
             log_message("=" * 50)
             
@@ -1589,8 +1600,8 @@ def main():
             # Refresh UI
             st.rerun()
             
-        except Exception as e:
-            log_message(f"Error: {str(e)}", level="error")
+        except Exception as e_main: # Renamed
+            log_message(f"Error: {str(e_main)}", level="error")
             st.session_state.processing_complete = True
             st.rerun()
 
