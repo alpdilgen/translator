@@ -794,8 +794,8 @@ def main():
     st.session_state.custom_prompt_input = st.text_area("Additional prompt instructions (optional)", st.session_state.get('custom_prompt_input', ""), height=100, key="main_custom_prompt_area") # Renamed
 
     if st.button("Start Processing", disabled=st.session_state.processing_started, key="main_start_button"):
-    if not uploaded_xliff: st.error("Please upload a MemoQ XLIFF file"); log_message("XLIFF missing", "error")
-    elif not inp_api_key: st.error("Please enter an API Key"); log_message("API Key missing", "error")
+       if not uploaded_xliff: st.error("Please upload a MemoQ XLIFF file"); log_message("XLIFF missing", "error")
+       elif not inp_api_key: st.error("Please enter an API Key"); log_message("API Key missing", "error")
     # Optional files TMX, CSV, Prompt - do not block if missing, but log
                 else:
                     st.session_state.processing_started = True
