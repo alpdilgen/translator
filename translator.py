@@ -1463,7 +1463,7 @@ def main():
                     batch_result['error'] = str(e)
                     st.session_state.batch_results.append(batch_result)
             
-            # Update XLIFF with translations
+# Update XLIFF with translations
             msg = f"Updating XLIFF file with {len(all_translations)} translations"
             log_message(msg)
             
@@ -1479,7 +1479,8 @@ def main():
                 
                 if not final_path:
                     raise Exception("Failed to save translated XLIFF file")
-msg = f"Updated {updated_count} segments in the XLIFF file"
+                
+                msg = f"Updated {updated_count} segments in the XLIFF file"
                 log_message(msg, level="success")
                 
                 msg = f"Saved translated XLIFF to {os.path.basename(final_path)}"
@@ -1487,6 +1488,21 @@ msg = f"Updated {updated_count} segments in the XLIFF file"
                 
                 # Store translated file path for download
                 st.session_state.translated_file_path = final_path
+                
+            except Exception as update_error:
+                # Log error
+                error_msg = f"Error updating or saving XLIFF: {str(update_error)}"
+                log_message(error_msg, level="error")
+                
+                # Try to save as text file instead
+                text_path = save_translations_as_text(segments, all_translations, xliff_file.name)
+                
+                if text_path:
+                    msg = f"Saved translations as text file instead: {os.path.basename(text_path)}"
+                    log_message(msg, level="warning")
+                    
+                    # Store text file path for download
+                    st.session_state.translated_file_path = text_path
                 
             except Exception as update_error:
                 # Log error
